@@ -1,5 +1,10 @@
 type int = number;
 
+
+//==================
+// #region TOKENS
+//==================
+
 const enum TokenType {
     none,
     id, //sequence of alphabet (multople)
@@ -33,7 +38,7 @@ function char_code(c: string): TokenType {
 
 interface Token { type: TokenType, val: string, pos: int, line: int, col: int }
 
-function cursor_inc(t: Tokenizer) {
+function _cursor_inc(t: Tokenizer) {
     t.pos++;
     t.col++;
     if (is_newline(t.src[t.pos - 1])) {
@@ -42,7 +47,7 @@ function cursor_inc(t: Tokenizer) {
     }
 }
 
-function create_tokenizer(text: string): Tokenizer {
+function tokenizer(text: string): Tokenizer {
     return { src: text, pos: 0, line: 0, col: 0, mcol: 0, mpos: 0, mline: 0 };
 }
 
@@ -55,8 +60,7 @@ function token(tok: Tokenizer): Token | null {
     tok.mline = tok.line;
 
     const enum Kind {
-        none,
-        advance = 1, emit = 2, emit_advance = 3,
+        none, advance, emit, emit_advance,
     }
 
     while (tok.pos < tok.src.length) {
@@ -86,7 +90,7 @@ function token(tok: Tokenizer): Token | null {
 
         if (kind & Kind.advance) {
             val += c;
-            cursor_inc(tok);
+            _cursor_inc(tok);
         }
 
         if (kind & Kind.emit)
@@ -102,7 +106,7 @@ function token(tok: Tokenizer): Token | null {
 
 
 function tokenize(str: string) {
-    let tok = create_tokenizer(str);
+    let tok = tokenizer(str);
     let list: Token[] = [];
     let t;
     while (t = token(tok)) {
@@ -110,3 +114,11 @@ function tokenize(str: string) {
     }
     return list;
 }
+
+
+
+//==================
+// #region SYNTAX
+//==================
+//
+

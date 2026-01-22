@@ -1,5 +1,5 @@
 .PHONY: all
 
 all: 
-	tsc -w joc/joc.ts & \
+	tsc -w joc.ts & \
 	live-server .
