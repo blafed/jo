@@ -1,10 +1,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-void *jo_new(size_t size);            // heap alloc
-void jo_del(void *ptr);               // heap free
-void *jo_mov(void **ptr);             // heap move
-void *jo_exp(void *ptr, size_t size); // heap expand
+void *jo_new(size_t size);             // heap alloc
+void jo_del(void *ptr);                // heap free
+void *jo_mov(void **ptr);              // heap move, invalidate ptr
+void *jo_exp(void **ptr, size_t size); // mov + heap expand/realloc
 
 #define JO_BUN_DEF(type)                                                       \
   struct _jo_bun_##type {                                                      \
