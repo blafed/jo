@@ -8,8 +8,8 @@
 
 # Files
 - `joc.h` C backend
-- `joc.ts` Compiler in typescript (prototype stage)
-- `Makefile` make it
+- `joc.ts` compiler in typescript (prototype stage)
+- `ex/` examples
 
 # Roadmap
 - [X] tokenizer (dump tokens)
