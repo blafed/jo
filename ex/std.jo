@@ -3,7 +3,7 @@ log<T>(x T){
         char buf[128];
         long long len;
     }
-    match T {
+    when T {
         int: cline {
             len = jo_stry_int(x, buf);
         }
