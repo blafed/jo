@@ -2,9 +2,12 @@
 **Under development**
 
 # Keys
-- Emit clean c code
+- emit clean C code
 - default is value, if not stated otherwise
 - same syntax means exactly the same thing, not type-based
+- one owner, infinite refs. *no partial, no borrowship*
+- auto memory management, *no GC, no RC, no runtime*
+
 
 # Files
 - `joc.h` C backend
@@ -37,6 +40,32 @@ foo() int {}  // define with type
 foo()          // call
 ```
 
+### Memory
+
+- **Stack and heap are just residence, they dont affect how things work**
+- for any given time, there is only 1 one owner, and 0 to infinity refs
+- refs ref to anything
+- memory behaviour doesnt change whatever T is
+
+
+```jo
+x T = whatever() //owned inline/stack
+y := x //copy
+```
+
+```jo
+do {
+    x T* = whatever_heap() //owned heap
+    y := x //y is T,  deep copy in stack
+    z := *x //z is T*, deep copy in heap
+    
+    r := &x //r is T&, reference
+    s := &y //r is T&, reference
+    
+
+    //x,y,z, are auto freed when the context dies
+}
+```
 
 
 ### Fields / Variables
@@ -226,7 +255,20 @@ c = xxx_sum(a, b);
 ^x      // move
 ^[]foo  // expand
 []{}    // array
-[*]{}   // bun
+*[]{}   // bun
 ```
 
 ---
+
+
+# Pipeline
+
+### [tok]enizer
+
+### [syn]izer
+
+### [sem]antics
+
+### [sim]ulation
+
+### TODO...
