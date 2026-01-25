@@ -128,6 +128,8 @@ const enum SynType {
     comment, //a comment block
 }
 
+enum SynKeyword { if, else, while, for, return, break, continue, when, do, cline, this, is, in, null, true, false }
+
 interface Syn {
     parent: Syn,
     type: SynType,
@@ -176,6 +178,11 @@ function synize(tokens: Token[]): Syn {
         let s: Syn = { type: current.type >= SynType.string && escape != '$' ? SynType.slug : SynType.atom, parent: current };
         if (val == '.')
             s.anot = 's';
+        if (s.type == SynType.atom && s.anot == 'i') {
+            let keyword = SynKeyword[val as any];
+            if (keyword)
+                s.anot = 'k';
+        }
 
         current.child!.push(s);
 

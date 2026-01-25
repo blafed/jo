@@ -1,23 +1,5 @@
 log<T>(x T){
     cline {
-        char buf[128];
-        long long len;
-    }
-    when T {
-        int: cline {
-            len = jo_stry_int(x, buf);
-        }
-        float: cline {
-            len = jo_stry_float(x, buf);
-        }
-        bool: cline {
-            len = jo_stry_bool(x, buf);
-        }
-        str: cline {printf(x); return;}
-        else: ???
-    }
-
-    cline {
-        printf("%.*s", (int)len, buf);
+        printf(s.ptr);
     }
 }
