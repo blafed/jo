@@ -1,5 +1,11 @@
-log<T>(x T){
+stringify<T>(x T): '$x'
+log<T>(x T) {
+    s := '$x'
     cline {
         printf(s.ptr);
     }
+}
+
+<T>. {
+    str(this): stringify(this)
 }
