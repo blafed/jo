@@ -33,6 +33,35 @@ enum TokenType : char {
 };
 typedef enum TokenType TokenType;
 
+// clang-format off
+
+static const char *token_type_name(enum TokenType t) {
+  switch (t) {
+  case TOKEN_NONE:     return "NONE";
+  case TOKEN_ID:       return "ID";
+  case TOKEN_NUM:      return "NUM";
+  case TOKEN_SYM:      return "SYM";
+  case TOKEN_SEP:      return "SEP";
+
+  case TOKEN_ROOT:     return "ROOT";
+  case TOKEN_KEY:      return "KEY";
+  case TOKEN_BLOCK:    return "BLOCK";
+  case TOKEN_BOX:      return "BOX";
+  case TOKEN_PAREN:    return "PAREN";
+  case TOKEN_INTERP:   return "INTERP";
+  case TOKEN_ESCAPE:   return "ESC";
+  case TOKEN_STR1:     return "STR";
+  case TOKEN_STR2:     return "STR$";
+  case TOKEN_SLUG:     return "SLUG";
+  case TOKEN_COMMENT1: return "//";
+  case TOKEN_COMMENT2: return "/*";
+
+  default:             return "???";
+  }
+}
+// clang-format on
+
+
 static inline TokenType char_code(char c) {
     return is_whitespace(&c) ? TOKEN_SEP :
            is_alpha(&c)      ? TOKEN_ID  :
@@ -48,22 +77,18 @@ typedef struct {
 
 typedef struct Token {
 	enum TokenType type;
-	const char *val;
+	char data; //optional
 	unsigned short len;
-	int pos, line, col;
 
-	// phase 2
+	int pos, line, col;
+	
+	const char *val;
 	struct Token *parent;
 
 } Token;
 
 
-	// struct Token *next; // next sibling
-	// struct Token *first_child;
-	// struct Token *last_child;
 
-	// // phase 3
-	// const struct Token **child;
 
 static inline void tokenizer_init(Tokenizer *t, const char *src, size_t len) {
 	t->src = src;
@@ -140,6 +165,7 @@ int token(Tokenizer *tok, Token *out) {
 		return 1;
 	}
 
+	*out = (Token){};
 	return 0;
 }
 
@@ -179,7 +205,7 @@ static inline void sum_token(Token *a, Token *b) {
 
 void lexize(Token *tokens, size_t tokens_len, Token* stack[]) {
 	// Token *stack[200];
-	Token root = {.type = TOKEN_ROOT};
+	static Token root = {};
 	size_t stack_len = 1;
 	stack[0] = &root;
 
@@ -195,15 +221,7 @@ void lexize(Token *tokens, size_t tokens_len, Token* stack[]) {
 		const char escape = cur->type == TOKEN_ESCAPE ? cur->val[0] : 0;
 
 		// simple parenting
-		//===========================
 		t->parent = cur;
-
-		// if (t->parent->last_child) t->parent->last_child->next = t;
-		// else t->parent->last_child = t;
-		// t->parent->last_child = t;
-
-		// if(!t->parent->first_child) t->parent->first_child = t;
-		//===========================
 
 		int do_push = TOKEN_NONE;
 		int do_upgrade = TOKEN_NONE; // upgrade current's type
@@ -231,15 +249,25 @@ void lexize(Token *tokens, size_t tokens_len, Token* stack[]) {
 				break;
 			}
 
+			if(escape == '$' && t->val[0] != '{') {
+				do_pop = 2;
+				break;
+			}
+
 			switch (t->val[0]) {
 			case '.':
-				if (cur->type == TOKEN_NUM || cur->type == TOKEN_ID) do_append = 1;
+				if (in_atom) do_append = 1;
 				else if (!in_slug) do_escape = 1;
 				else do_normal = 1;
 				break;
+			case '_':
+				if(in_atom) do_append = 1;
+				else if(!in_slug) do_push = TOKEN_ID;
+				else do_normal = 1;
+				break;
 			case '{':
-				if (!in_slug) do_push = TOKEN_BLOCK;
-				else if (in_string && escape == '$') do_upgrade = TOKEN_BLOCK;
+				if (escape == '$') do_upgrade = TOKEN_BLOCK;
+				else if (!in_slug) do_push = TOKEN_BLOCK;
 				else do_normal = 1;
 				break;
 			case '(':
@@ -269,14 +297,13 @@ void lexize(Token *tokens, size_t tokens_len, Token* stack[]) {
 				break;
 			case '\'':
 				if (in_string) do_pop = 1;
-				else if (!in_slug) {
-					if (escape == '$') do_upgrade = TOKEN_STR2; //$''
-					else do_push = TOKEN_STR1; // begin string
-				}
+				else if (escape == '$') do_upgrade = TOKEN_STR2; //$''
+				else do_push = TOKEN_STR1; // begin string
+				// else do_normal =1;
 				break;
 			case '/':
 				if (escape == '/') do_upgrade = TOKEN_COMMENT1;
-				if (escape == '*' && cur->type == TOKEN_COMMENT2) do_pop = 1;
+				else if (escape == '*' && cur->type == TOKEN_COMMENT2) do_pop = 1;
 				else do_push = TOKEN_ESCAPE;
 				break;
 			case '*':
@@ -311,8 +338,10 @@ void lexize(Token *tokens, size_t tokens_len, Token* stack[]) {
 				t->type = TOKEN_NONE;
 				if (cur->type == TOKEN_ID) {
 					int key = get_keyword(t->val);
-					if (key)
+					if (key) {
 						cur->type = TOKEN_KEY;
+						cur->data = key;
+					}
 				}
 			}
 		}
@@ -336,11 +365,93 @@ void lexize(Token *tokens, size_t tokens_len, Token* stack[]) {
 	}
 }
 
+int skip_cline(const char* start, size_t len) {
+    if (len == 0 || start[0] != '{')
+        return -1;
+
+    char stack[64];
+    char sp = 1;
+    int i = 1;
+    stack[0] = '{'; //root
+
+    while (i < len) {
+        char s = stack[sp - 1];
+        char c = start[i];
+        char n = (i + 1 < len) ? start[i + 1] : 0;
+
+        char do_push = 0;
+        unsigned char do_pop  = 0;
+
+        /* escape inside string / char */
+        if ((s == '"' || s == '\'') && c == '\\') {
+            i += 2;
+            continue;
+        }
+
+        switch (c) {
+
+        /* ---- closing ---- */
+        case '}':
+            if (s == '{') do_pop = 1;
+            break;
+
+        case '"':
+            if (s == '"') do_pop = 1;
+            else if (s == '{') do_push = '"';
+            break;
+
+        case '\'':
+            if (s == '\'') do_pop = 1;
+            else if (s == '{') do_push = '\'';
+            break;
+
+        case '\n':
+            if (s == '/') do_pop = 1;
+            if (s == '#' && start[i - 1] != '\\') do_pop = 1;
+            break;
+
+        /* ---- opening ---- */
+        case '{':
+            if (s == '{') do_push = '{';
+            break;
+
+        case '/':
+            if (s == '{' && n == '/') do_push = '/', i++;
+            else if (s == '{' && n == '*') do_push = '*', i++;
+            break;
+
+        case '*':
+            if (s == '*' && n == '/') do_pop = 1, i++;
+            break;
+
+        case '#':
+            if (s == '{') do_push = '#';
+            break;
+        }
+
+        i++;
+
+        if (do_pop) {
+            sp--;
+            if (sp == 0)
+                return i - 1;
+        } else if (do_push) {
+            stack[sp++] = do_push;
+        }
+    }
+
+    return -1;
+}
+
+#include <stdlib.h>
+
+typedef struct Parser Parser;
+typedef struct Node Node;
+
 // clang-format off
-typedef enum { AST_NONE, AST_ID, AST_WRAP, AST_FUNC, AST_CALL, AST_NAMESPACE, AST_BIN, AST_FLOW, AST_CONTROL, AST_BLOCK, AST_PAIR, AST_DECL, AST_ASSIGN } AstType;
+typedef enum { AST_NONE, AST_ID, AST_LIT, AST_WRAP, AST_FUNC, AST_CALL, AST_NAMESPACE, AST_BIN, AST_FLOW, AST_CONTROL, AST_BLOCK, AST_PAIR, AST_DECL, AST_ASSIGN } AstType;
 typedef enum { MOD_NONE, MOD_REF, MOD_REX, MOD_NEW, MOD_OPT, MOD_MOV, MOD_NOT, MOD_NOX, MOD_NEG, MOD_POS } AstMod;
 
-typedef struct Node Node;
 
 struct Node {
   AstType t;
@@ -348,6 +459,7 @@ struct Node {
 
   union {
     struct { const char *name; unsigned short len; unsigned char mut; } id;
+	struct {const char* name; unsigned short len; } lit;
     struct { Node *x,*y; AstMod mod; unsigned pre:1; } wrap;
     struct { Node **args; int args_len; Node *ret_type; Node **body; int body_len; } func;
     struct { Node *func; Node **args; int args_len; } call;
@@ -361,25 +473,145 @@ struct Node {
     struct { Node *name,*val; } assign;
   };
 };
+
+
+
+
+static inline int match(const Token* token, size_t tokens_len, int pos, enum TokenType type, const char* val, size_t name_len) {
+	if (pos >= tokens_len)
+		return 0;
+	if (type != 0 && token[pos].type != type)
+		return 0;
+	if (val) {
+		if (token[pos].len != name_len)
+			return 0;
+		if (strncmp(token[pos].val, val, name_len))
+			return 0;
+	}
+	return 1;
+}
+
+#define match_val(pos, val) match(p->tokens, p->tokens_len, i, 0, val, sizeof(val) - 1)
+#define match_type_val(pos, type, val) match(p->tokens, p->tokens_len, i, type, val, sizeof(val) - 1)
+#define match_type(pos, type) match(p->tokens, p->tokens_len, i, type, NULL, 0)
+
+
+
+
+struct Parser {
+	Node* nodes;
+	size_t nodes_len;
+	size_t nodes_cap;
+
+	const Token* tokens;
+	size_t tokens_len;
+};
+
+int parse_id(Parser* p, int i, Node* out) {
+	if(match_type(i, TOKEN_ID)) return i;
+	out->t = AST_ID;
+	out->id.name = p->tokens[i].val;
+	out->id.len = p->tokens[i].len;
+
+	int mut = match_type_val(++i, TOKEN_SYM, "`");
+	
+	if(mut) i++;
+	return i;
+}
+
+int parse_op(Parser* p, int i, char** out) {
+	
+}
+
+int parse_bin(Parser* p, int i, Node* out, Node* a, Node* b) {
+	if(!match_type(i, TOKEN_SYM)) return 0;
+
+	int ip = i;
+	i = parse_id(p, i, out);
+	if(i == ip) return 0;
+
+	char* op = NULL;
+	ip = i;
+	i = parse_op(p, i, &op);
+	if(i == ip) return 0;
+
+	ip = i;
+	i = parse_id(p, i, out);
+	if(i == ip) return 0;
+
+	out->t = AST_BIN;
+	out->bin.op = p->tokens[i].val;
+	out->bin.a = a;
+	out->bin.b = b;
+	return i+1;
+}
+
+static Node * parser_alloc(Parser*p) {
+	if(p->nodes_len == p->nodes_cap) {
+		p->nodes_cap *= 2;
+		Node* tmp = realloc(p->nodes, p->nodes_cap * sizeof(Node));
+
+		if(tmp == p->nodes)
+			p ->nodes = tmp;
+	}
+}
 // clang-format on
 
-int match_id(const Token* tokens, size_t tokens_len, Node* out) {
 
-} 
 
-// void astify(const Token* root, Node * arena) {
-// 	int pos = 0;
-// 	int arena_len = 0;
+int match_id(const Token* tokens, int pos, size_t tokens_len, Node* out) {
+	if(!match_type(pos, TOKEN_ID)) return 0;
 
-// 	enum State { s_group, s_id, s_call, s_func_head, s_func_body};
-// 	enum State state;
+	int mut = match_type_val(pos+1, TOKEN_SYM, "`");
 
-// 	Token* child = root[0];
-// 	while(child){
-// 		astify(child, arena);
-// 		child = child->next;
-// 	}
-// }
+	out->t = AST_ID;
+	out->id.name = tokens[pos].val;
+	out->id.len = tokens[pos].len;
+	out->id.mut = mut;
+	return  1;
+}
+
+int match_lit(const Token* tokens, int pos, size_t tokens_len, Node* out) {
+	if(!match_type(pos, TOKEN_NUM)) return 0;
+
+	out->t = AST_LIT;
+	out->lit.name = tokens[pos].val;
+	out->lit.len = tokens[pos].len;
+	return  1;
+}
+
+int match_node(const Token* tokens, int pos, size_t tokens_len, Node* out) {
+	if(match_id(tokens, pos, tokens_len, out)) return 1;
+	if(match_lit(tokens, pos, tokens_len, out)) return 1;
+	//TODO
+	return 0;
+}
+
+
+
+int astify(const Token* tokens, int pos, size_t tokens_len, Node * arena) {
+	int arena_len = 0;
+
+	const Token* last = NULL;
+
+	printf("\nastify");
+	while(pos < tokens_len) {
+		const Token* t = &tokens[pos++];
+		if(!t->type)
+			continue;
+		if(last && t->parent == last) //going down
+			pos = astify(t, pos, tokens_len, arena);
+		else if(pos >= tokens_len || last && last->parent != tokens[pos].parent) //going up
+			break;
+
+		printf(" %s", token_type_name(t->type));
+
+		last = t;
+	}
+	printf("\n");
+
+	return pos;
+}
 // clang-format off
 
 #undef SIM
@@ -434,33 +666,6 @@ void sim_default(Sim * s) {
 #ifdef TEST
 #include <stdio.h>
 
-// clang-format off
-
-static const char *token_type_name(enum TokenType t) {
-  switch (t) {
-  case TOKEN_NONE:     return "NONE";
-  case TOKEN_ID:       return "ID";
-  case TOKEN_NUM:      return "NUM";
-  case TOKEN_SYM:      return "SYM";
-  case TOKEN_SEP:      return "SEP";
-
-  case TOKEN_ROOT:     return "ROOT";
-  case TOKEN_KEY:      return "KEY";
-  case TOKEN_BLOCK:    return "BLOCK";
-  case TOKEN_BOX:      return "BOX";
-  case TOKEN_PAREN:    return "PAREN";
-  case TOKEN_INTERP:   return "INTERP";
-  case TOKEN_ESCAPE:   return "ESC";
-  case TOKEN_STR1:     return "STR";
-  case TOKEN_STR2:     return "STR$";
-  case TOKEN_SLUG:     return "SLUG";
-  case TOKEN_COMMENT1: return "//";
-  case TOKEN_COMMENT2: return "/*";
-
-  default:             return "???";
-  }
-}
-// clang-format on
 
 void print_token(const Token *t) {
 	if (!t->type)
@@ -480,6 +685,14 @@ void print_token(const Token *t) {
 int main() {
 
 	Tokenizer tok;
+	// const char cline[] = "{//\n}";
+
+	// int pos = skip_cline(cline, sizeof(cline) - 1);
+	// printf("cline skipped %d at %s\n", pos, cline + pos);
+
+	// return 0;
+
+
 	const char src[] = "foo(){'hi$1 ${this is interpolation code () its fire}''you are donky;'}da";
 	tokenizer_init(&tok, src, sizeof(src) - 1);
 
@@ -488,6 +701,8 @@ int main() {
 
 	size_t len = tokens(&tok, list, 1000 * 1000);
 	lexize(list, len, stack);
+
+	astify(list, 0, len, NULL);
 
 	for (int i = 0; i < len; i++) {
 		print_token(&list[i]);

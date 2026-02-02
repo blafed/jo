@@ -128,14 +128,14 @@ const enum SynType {
     comment, //a comment block
 }
 
-enum SynKeyword { if, else, while, for, return, break, continue, when, do, cline, this, is, in, null, true, false }
 
 interface Syn {
     parent: Syn,
     type: SynType,
     anot?: string, //sub type annotation (i = number, n = name, s = symbol, etc...)
     child?: Syn[],
-    val?: string
+    val?: string,
+    anot2?: ':', //only for groups
 }
 
 function synize(tokens: Token[]): Syn {
@@ -178,11 +178,11 @@ function synize(tokens: Token[]): Syn {
         let s: Syn = { type: current.type >= SynType.string && escape != '$' ? SynType.slug : SynType.atom, parent: current };
         if (val == '.')
             s.anot = 's';
-        if (s.type == SynType.atom && s.anot == 'i') {
-            let keyword = SynKeyword[val as any];
-            if (keyword)
-                s.anot = 'k';
-        }
+        // if (s.type == SynType.atom && s.anot == 'i') {
+        //     let keyword = SynKeyword[val as any];
+        //     if (keyword)
+        //         s.anot = 'k';
+        // }
 
         current.child!.push(s);
 
@@ -383,6 +383,7 @@ function synize(tokens: Token[]): Syn {
     return current;
 }
 
+
 function print_syn(s: Syn, d = 0): string {
     const pad = d + '  '.repeat(d);
 
@@ -418,6 +419,279 @@ function print_syn(s: Syn, d = 0): string {
     return out;
 }
 
+
+//===================
+// #region SEMANTICS
+//===================
+
+
+
+
+
+//note: these are combinations (double wrap)
+//exp = ^[y]x
+//bun = *[y]x
+//refa = &[y]x
+//rexa = &`[y]x
+
+enum SemKeyword { if, else, while, for, return, break, continue, when, do, defer, cline, this, is, in, null, true, false, assert }
+enum SemKeyword2 { if = SemKeyword.if, while = SemKeyword.while, for = SemKeyword.for, when = SemKeyword.when, }
+enum SemKeyword1 { else = SemKeyword.else, defer = SemKeyword.defer, do = SemKeyword.do }
+enum SemSym2 { ':=', '+=', '-=', '*=', '/=', '%=', '^=', '>>', '<<', '||', '&&', '==', '!=', '>=', '<=', '..', '::', '++', '--' }
+enum SemSym3 { '???', '&==', '...' }
+// type SynKeywordDual = SemKeyword.if | SemKeyword.while | SemKeyword.for | SemKeyword.when;
+// type SynKeywordSingle = SemKeyword.else | SemKeyword.return | SemKeyword.do;
+
+
+const enum SemMod {
+    arr, //x[y]
+    ref, //x&
+    rex, //x&`
+    new, //x*
+    opt, //x?
+    mov, //^x
+    not, //!x
+    nox, //~x
+    neg, //-x
+    pos, //+x
+}
+abstract class Sem { }
+
+const enum SemType { id, wrap, func, call, namespace, bin, flow, control, block, pair, decl, assign }
+
+
+interface SemBase { t: SemType }
+interface Sem_id extends SemBase { t: SemType.id, name: string, mut?: boolean }
+interface Sem_wrap { t: SemType.wrap, x: Sem, mod: SemMod, y?: Sem, pre?: boolean }
+interface Sem_func extends SemBase { t: SemType.func, args: Sem[], type?: Sem, body?: Sem[] }
+interface Sem_call extends SemBase { t: SemType.call, func: Sem, args: Sem[] }
+interface Sem_namespace extends SemBase { t: SemType.namespace, name: string, body: Sem[] }
+interface Sem_bin extends SemBase { t: SemType.bin, op: string, a: Sem, b: Sem }
+interface Sem_flow extends SemBase { t: SemType.flow, type: SemKeyword.if | SemKeyword.while | SemKeyword.for | SemKeyword.when | SemKeyword.do | SemKeyword.defer, subject?: Sem, body: Sem[] }
+interface Sem_control extends SemBase { t: SemType.control, type: SemKeyword.return | SemKeyword.break | SemKeyword.continue, paylod?: Sem }
+interface Sem_block extends SemBase { t: SemType.block, what: Sem, body: Sem[] } //genreal blocks
+interface Sem_pair extends SemBase { t: SemType.pair, a: Sem, b: Sem } //general pairing
+interface Sem_decl extends SemBase { t: SemType.decl, name: Sem_id, type?: Sem, init?: Sem }
+interface Sem_assign extends SemBase { t: SemType.assign, name: Sem, val: Sem }
+
+
+function sem_match(arr: Syn[], i: number, type?: SynType, anot?: string, val?: string) {
+    if (!arr)
+        return false;
+    if (i < 0) i = arr.length + i;
+    if (i >= arr.length) return false;
+    if (type == undefined || arr[i].type == type && (!anot || arr[i].anot == anot && (!val || arr[i].val == val))) return true;
+    return false;
+}
+
+function sem_match2(syn: Syn, type?: SynType, anot?: string, val?: String) {
+    return type == undefined || syn.type == type && (!anot || syn.anot == anot && (!val || syn.val == val));
+}
+function sem_is_id(syn: Syn) { return sem_match2(syn, SynType.atom, 'i'); }
+function sem_is_num(syn: Syn) { return sem_match2(syn, SynType.atom, 'n'); }
+function sem_is_kw(syn: Syn, kw?: string) { return sem_match2(syn, SynType.atom, 'k', kw); }
+function sem_is_kw1(syn: Syn) { return sem_match2(syn, SynType.atom, 'k') && SemKeyword1[syn.val as any] != undefined; }
+function sem_is_kw2(syn: Syn) { return sem_match2(syn, SynType.atom, 'k') && SemKeyword2[syn.val as any] != undefined; }
+function sem_is_sym(syn: Syn, sym: string) { return sem_match2(syn, SynType.atom, 's', sym); }
+function sem_is_block(syn: Syn) { return sem_match2(syn, SynType.group, '{'); }
+function sem_is_combo(syn: Syn) { return sem_match2(syn, SynType.seq); }
+function sem_is_box(syn: Syn) { return sem_match2(syn, SynType.sep); }
+
+function sem_norm(s: Syn): Syn | Syn[] | null {
+    switch (s.type) {
+        case SynType.atom:
+            if (!s.val || s.child) return null;
+            switch (s.anot) {
+                case 'i': if (SemKeyword[s.val as any] != undefined) s.anot = 'k'; break;
+                case 's':
+                    let spl = s.val.length == 2 && SemSym2[s.val as any] == undefined || s.val.length == 3 && SemSym3[s.val as any] == undefined;
+                    if (spl) {
+                        let arr: Syn[] = [];
+                        for (let i = 0; i < s.val.length; i++) {
+                            arr.push({ parent: s.parent, type: SynType.atom, anot: 's', val: s.val[i] });
+                        }
+                        return arr;
+                    }
+                    break;
+            }
+            break;
+
+
+        case SynType.comment:
+        case SynType.string:
+        case SynType.seq:
+        case SynType.group:
+            let arr: Syn[] = [];
+            for (let x in s.child!) {
+                let n = sem_norm(s.child![x]);
+                if (!n) console.error('syntax error', x);
+                else if (Array.isArray(n)) arr.push(...n);
+                else arr.push(n);
+            }
+            s.child = arr;
+            if (s.type !== SynType.seq) break;
+
+            const enum Grade { A, B, X, O, T }
+            const grade = function (s: Syn) {
+                return sem_is_kw1(s) ? Grade.A :
+                    sem_is_kw2(s) ? Grade.B :
+                        sem_is_block(s) ? Grade.T :
+                            sem_is_sym(s, ':') ? Grade.X :
+                                Grade.O;
+            }
+
+
+
+            let stack: Syn[][] = [[]];
+            let was_context = 0;
+
+            // const push = (s: Syn) => (!stack[stack.length - 1].length) ? stack[stack.length - 1].push(s) : stack.push([s]);
+
+            for (let i = 0; i < arr.length; i++) {
+                let s = arr[i];
+                let g = grade(s);
+                switch (g) {
+                    case Grade.A:
+                    case Grade.B:
+                        was_context = 2;
+                        stack.push([s]);
+                        stack.push([]);
+                        break;
+                    case Grade.X:
+                        stack.push([]);
+                        break;
+                    case Grade.T:
+                        stack.push([s]);
+                        stack.push([]);
+                        break;
+                    case Grade.O:
+                        // case Grade.X:
+                        stack[stack.length - 1].push(s);
+                        break;
+                }
+                was_context--;
+            }
+            console.log(stack.map(x => x.map(y => y.val ?? (y.anot == '{' ? '{..}' : y.anot))));
+
+            const fold = function (par_type: SynType, arr: Syn[], x: number = 0): Syn {
+                let anot = undefined;
+                if (par_type == SynType.group) {
+                    anot = '{';
+                    if (arr.length - x > 1)
+                        return { type: par_type, parent: arr[x].parent, anot: '{', child: [fold(SynType.seq, arr, x)] };
+                }
+                let seq: Syn = { type: par_type, anot, parent: arr[x].parent, child: arr.slice(x) };
+                for (let i = x; i < arr.length; i++) arr[i].parent = seq;
+                return seq;
+            };
+
+            let clauses: { need: number, mem: Syn[] }[] = [];
+
+            const folded = function (list: Syn[]) {
+                let tmp
+                if (list.length == 1 && grade(list[0]) == Grade.T) tmp = list[0];
+                else tmp = fold(SynType.group, list);
+                list.length = 0;
+                last_g = -1; //HACK (lazy lol)
+                return tmp;
+            }
+
+            let last_g = -1;
+            for (let i = 0; i < stack.length; i++) {
+                let list = stack[i];
+                if (!list.length) {
+                    last_g = -1;
+                    continue;
+                }
+                let head = stack[i - 1];
+                let g = grade(list[0]);
+
+
+                switch (g) {
+                    case Grade.A: clauses.push({ need: 2, mem: [list[0]] }); break;
+                    case Grade.B: clauses.push({ need: 3, mem: [list[0]] }); break;
+                    case Grade.O:
+                    case Grade.T:
+                        //append me to the nearest empty clause
+                        let i = 0;
+                        let cl = clauses[clauses.length - 1 - i];
+                        while (cl && cl.mem.length >= cl.need) {
+                            cl = clauses[clauses.length - 1 - (++i)];
+                        }
+                        if (cl && cl.mem.length < cl.need)
+                            cl.mem.push(folded(list));
+                        //no nearest clause?
+                        else if (last_g == Grade.O) head.push(folded(list));
+                        else clauses.push({ need: 1, mem: list });
+
+                        break;
+                }
+                last_g = g;
+            }
+
+            //collapse clauses, so append by needs. when underuse
+            for (let i = clauses.length - 1; i >= 0; i--) {
+                let cl = clauses[i];
+                if (cl.mem.length < cl.need) {
+                    cl.mem.push(folded(clauses[i + 1].mem));
+                    clauses.length--;
+                }
+            }
+            arr.length = 0;
+
+            //convert clasues into one seq
+            for (let i = 0; i < clauses.length; i++) arr.push(...clauses[i].mem);
+
+            console.log(stack.map(x => x.map(y => y.val ?? (y.anot == '{' ? '{..}' : y.anot))));
+            break;
+
+    }
+    return s;
+}
+
+
+function sem(s: Syn) {
+    s = sem_norm(s);
+}
+
+//===================
+// #region SIMULATION
+//===================
+
+interface Meta {
+
+}
+
+const enum PrimitiveType {
+    i8, u8, i16, u16, i32, u32, i64, u64, f32, f64,
+    bool,
+    str,
+}
+
+interface SimType { prime?: PrimitiveType; }
+interface SimFunc { }
+interface SimVar { }
+interface SimContext {
+    types: Map<string, SimType>;
+    funcs: Map<string, SimFunc>;
+    fields: Map<string, SimVar>;
+    subs: SimContext[],
+}
+interface Sim {
+    root: SimContext
+}
+
+function simulate(s: Sem): Meta { return {}; }
+
+//===================
+// #region Emitter
+//===================
+
+interface Emit {
+
+}
+
+function emit(meta: Meta): string { }
 
 //===================
 // #region UTILS
@@ -489,12 +763,11 @@ function test_code(code: string) {
     console.log(tokens);
     console.log('SYNTAX:');
     console.log(print_syn(syn));
+    console.log(print_syn(sem_norm(syn)));
 }
 
 function test() {
     test_code(`
-        foo() {
-            log('hi from jo')
-        }
+       x: u if x : y z else w
     `);
 }
