@@ -17,7 +17,7 @@ size_t jo_fread(jo_file *, void *buf, size_t n);
 size_t jo_fwrite(jo_file *, const void *buf, size_t n);
 int jo_fclose(jo_file *);
 int jo_fseek(jo_file *, long offset, int origin);
-long jo_ftell(jo_file *); // ← yes, you should have this
+long jo_ftell(jo_file *);
 
 typedef void *(*jo_work)(void *);
 typedef struct jo_job jo_job;
@@ -36,6 +36,7 @@ int jo_ctz(uint32_t n);
 int jo_clzll(uint64_t n);
 int jo_clz(uint32_t n);
 
+int jo_stry_uint(unsigned long i, char *buf);
 int jo_stry_int(long i, char *buf);     // buf at least is 32
 int jo_stry_float(double f, char *buf); // buf at least is 64
 int jo_stry_bool(int b, char *buf);     // buf at least is 5

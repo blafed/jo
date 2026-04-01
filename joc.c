@@ -341,8 +341,6 @@ int token(Tokenizer *tok, Token *out) {
 
 	TokenType past = 0;
 
-	if(tok->pos == tok->len) return 0;
-
 	while(1) {
 		char c = tok->src[tok->pos];
 		TokenType code = CHAR_TYPE[(unsigned char)c];
@@ -379,17 +377,19 @@ int token(Tokenizer *tok, Token *out) {
 
 
 
-size_t tokens(Tokenizer *tok, Token *out, size_t cap) {
+size_t tokens_collect(const char* src, size_t len, Token *out, size_t cap) {
+	Tokenizer tok;
+	tokenizer_init(&tok, src, len);
 	size_t n = 0;
-	while (n < cap && token(tok, out)) {
+	while (n < cap && token(&tok, out)) {
 		out++;
 		n++;
 	}
-	return n; // end pointer
+	return n;
 }
 
 
-void token_symbolify(Token* tokens) {
+void tokens_symbolify(Token* tokens) {
 	Token *stack[3];
 	int sp = 0;
 
@@ -439,81 +439,11 @@ void token_symbolify(Token* tokens) {
 }
 
 
-// void token_detail(Token* tokens) {
-// 	Token *stack[3];
-// 	int sp = 0;
-
-// 	Token *t = tokens;
-	
-// 	//tokens is NULL TERMINATED
-// 	for (char type;(type = t->type); ++t) {
-// 		if(type == TOKEN_SYM)
-// 			stack[sp++] = t;
-
-// 		if(sp < 2) continue;
-
-// 		int data;
-// 		if(type != TOKEN_SYM) {
-// 			data = symbol(stack[0]->val, 2);
-// 			if(data) {
-// 				stack[0]->data = data;
-// 				stack[0]->len = 2;
-// 				stack[1]->type = TOKEN_NONE;
-// 				sp = 0;
-// 			}
-// 		}
-// 		else if (sp == 3) {
-// 			data = symbol(stack[0]->val, 3);
-// 			if(data) {
-// 				stack[0]->data = data;
-// 				stack[0]->len = 3;
-// 				stack[1]->type = TOKEN_NONE;
-// 				stack[2]->type = TOKEN_NONE;
-// 				sp = 0;
-// 			}
-// 			else {
-// 				data = symbol(stack[1]->val, 2);
-// 				if(data) {
-// 					stack[1]->data = data;
-// 					stack[1]->len = 2;
-// 					stack[2]->type = TOKEN_NONE;
-// 					sp = 0;
-// 				} else {
-// 					data = symbol(stack[0]->val, 2);
-// 					if(data){
-// 						stack[0]->data = data;
-// 						stack[0]->len = 2;
-// 						stack[1]->type = TOKEN_NONE;
-// 					}else{
-// 						stack[0] = stack[1];
-// 						stack[1] = stack[2];
-// 						sp = 2;
-// 					}
-// 				}
-// 			}
-// 			sp = 0;
-// 		}
-// 	}
-// }
-
-
-
-void lexize(Token *tokens, size_t tokens_len, Token* stack[]) {
+void tokens_merge(Token *tokens, size_t tokens_len, Token* stack[]) {
 	// Token *stack[200];
 	static Token root = {};
 	int sp = 0;
 	stack[sp] = &root;
-
-	//begin, start a blocker
-	//end, end the blocker
-	//push(x), upgrade to a scope and start it
-	//pop, end current scope
-	//kill, kill current scope, downgrade
-	//add, add to the blocker
-	//add_end, add end the blocker
-	//slugy, set this type to TOKEN_SLUG
-	//remove, remove this token (set to TOKEN_NONE)
-	//err, unexpected
 
 	enum {_NOTHING, _PUSH, _POP, _UPGRADE, _KILL, _APPEND, _TERM, _SLUGY, _REMOVE, _ERR };
 
@@ -561,10 +491,12 @@ void lexize(Token *tokens, size_t tokens_len, Token* stack[]) {
 					case '\n':
 						if(cur->type == TOKEN_COMMENT1) pop
 						else if(in_atom) term
+						else if (in_angle) kill
 						else if(in_slug) slugy
 					break;
 					default:
 						if(in_atom) pop
+						else if(in_angle) kill
 						else remove
 					break;
 				}
@@ -647,6 +579,13 @@ void lexize(Token *tokens, size_t tokens_len, Token* stack[]) {
 	#undef in_angle
 }
 
+size_t tokens(const char* src, size_t len, Token* list, Token** stack) {
+	size_t collected = tokens_collect(src, len, list, len);
+	tokens_symbolify(list);
+	tokens_merge(list, collected, stack);
+	return collected;
+}
+
 const char CHAR_BINARY[] = {
 	// Single-char
 	['+'] = 1,
@@ -699,7 +638,7 @@ void ast(const Token* tokens, int start, size_t tokens_len) {
 		STATE_NONE,
 		STATE_NAME,
 		STATE_BIN_OP,
-		STATE_BIN,
+		STATE_BIN,	
 	};
 
 	int stack[256];
@@ -2070,7 +2009,7 @@ int main() {
 	// return 0;
 	static Node nodes[1000];
 
-	uint8_t* fbuf = NULL;
+	char* fbuf = NULL;
 	// long flen = _read_file("ex/index.jon", &fbuf);
 	// printf("fuck %ld\n", flen);
 	
@@ -2085,19 +2024,24 @@ int main() {
 	fbuf = "a + b * c + (d * x)";
 	printf("%s\n", fbuf);
 	flen = strlen(fbuf);
-	tokenizer_init(&tok, fbuf, flen);
+	// tokenizer_init(&tok, fbuf, flen);
 	
-	static Token list[1000 * 1000];
-	static Token* stack[200];
-	
-	size_t len = tokens(&tok, list, 1000 * 1000);
-	token_symbolify(list);
-	lexize(list, len, stack);
-	
-	
-	static	Node* node_stack[1000];
+	Token* stack[200];
+	Token* list = NULL;
 
-	Node parsed;
+	list = malloc(sizeof(Token) * (flen + 1));
+	size_t len = tokens(fbuf, flen, list, stack);
+
+
+	
+	// size_t len = tokens_collect(&tok, list, 1000 * 1000);
+	// tokens_symbolify(list);
+	// tokens_merge(list, len, stack);
+	
+	
+	// static	Node* node_stack[1000];
+
+	// Node parsed;
 	// parse(list, len, &parsed, node_stack);
 	
 
@@ -2127,5 +2071,8 @@ int main() {
 	for (int i = 0; i < len; i++) {
 		print_token(&list[i]);
 	}
+
+	printf("last is %i\n", list[flen+1].type);
+
 }
 #endif
