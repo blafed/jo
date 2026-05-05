@@ -27,6 +27,11 @@ size_t jo_io_write(int fd, const void *buf, size_t n);
 long jo_io_seek(int fd, long offset, int origin);
 void jo_exec(const char *cmd);
 
+void jo_stry_int(long i, char *buf);
+void jo_stry_uint(unsigned long i, char *buf);
+void jo_stry_float(double f, char *buf);
+void jo_stry_bool(int b, char *buf);
+
 enum jo_token_type : char {
   JO_TOKEN_NONE,
   JO_TOKEN_ID,    // sequence of alphabet (multiple)
@@ -112,7 +117,8 @@ static const char *token_type_name(enum jo_token_type t) {
   case JO_TOKEN_COMMENT1: return "//";
   case JO_TOKEN_COMMENT2: return "/*";
 
-  default:             return "???";
+
+  default:             return "??? ";
   }
 }
 // clang-format on
@@ -255,7 +261,7 @@ int jo_tok(const char *src, struct jo_cursor *tok, struct jo_token *out) {
 
     switch (code) {
     case JO_TOKEN_NONE:
-      if(past) {out->type = past; out->val = src + start; out->len = tok->pos - start; return 1;}
+      if(past) { out->type = past; out->val = src + start; out->len = tok->pos - start; out->data=out->val[0]; return 1;}
       return 0;
       break;
     case JO_TOKEN_ID:
@@ -265,12 +271,13 @@ int jo_tok(const char *src, struct jo_cursor *tok, struct jo_token *out) {
     case JO_TOKEN_SEP:
       if (past != code || (tok->pos && src[tok->pos - 1] != c)) emit = 1;
       break;
-    case JO_TOKEN_SYM: out->data = c; emit = 1; break;
+    case JO_TOKEN_SYM: emit = 1; break;
     default: emit = 1; break;
     }
 
     if (emit && past) {
       out->type = past; out->val = src + start; out->len = tok->pos - start;
+      out->data = out->val[0];
       return 1;
     }
 
@@ -444,7 +451,7 @@ void jo_lex(jo_token* tokens, jo_token* stack[]) {
 	#define in_interp (cur->type == JO_TOKEN_INTERP)
 	// #define in_dollar (cur->type == jo_token_interp)
 
-  enum {_NOTHING, _PUSH, _POP, _UPGRADE, _KILL, _APPEND, _TERM, _SLUGY, _REMOVE, _ERR };
+  enum {_NOTHING, _PUSH, _POP, _UPGRADE, _ESC, _KILL, _APPEND, _TERM, _SLUGY, _REMOVE, _ERR };
   #define kill todo = _KILL;
 	#define append todo = _APPEND;
 	#define term todo = _TERM;
@@ -453,9 +460,10 @@ void jo_lex(jo_token* tokens, jo_token* stack[]) {
 	#define err todo = _ERR;
 	#define push(x) todo = _PUSH, payload = x;
 	#define pop todo = _POP;
-	#define upgrade(x) todo = _UPGRADE, payload = x;
-  #define escape(type, val) {upgrade(type) t->data = val;}
+  // #define mut(val) { todo = _MUT; payload = val; }
+  #define escape todo = _ESC;
   #define keep ;
+	// #define upgrade(x) todo = _UPGRADE, payload = x;
 
 	jo_token* t = tokens;
 	int sp = 0;
@@ -475,8 +483,10 @@ void jo_lex(jo_token* tokens, jo_token* stack[]) {
       case JO_TOKEN_ID:
       case JO_TOKEN_NUM:
         if (in_atom) append
+        else if(in_escape) escape
         else if(in_slug) slugy
         else push(t->type)
+        break;
       case JO_TOKEN_SEP:
         switch (t->val[0]) {
           case '\n':
@@ -489,11 +499,13 @@ void jo_lex(jo_token* tokens, jo_token* stack[]) {
           break;
           default:
             if(in_atom) term
+            else if(in_slug) slugy
             else keep
             // else if(in_angle)
             break;
         }
         break;
+        
       case JO_TOKEN_SYM:
         switch (t->data) {
           case '.':
@@ -506,7 +518,7 @@ void jo_lex(jo_token* tokens, jo_token* stack[]) {
             if (in_atom) term
             else if(in_interp) push(JO_TOKEN_GROUP)
             else if(in_slug) slugy
-            else upgrade(JO_TOKEN_GROUP)
+            else push(JO_TOKEN_GROUP)
             break;
           case '}': case ']': case ')':
             if(in_atom) term
@@ -516,7 +528,7 @@ void jo_lex(jo_token* tokens, jo_token* stack[]) {
             break;
           case '$':
             if(in_atom)term
-            else if(in_escape) escape(JO_TOKEN_SLUG, JO_CHAR_ESCAPE[t->data])
+            else if(in_escape) escape
             else if(in_comment) append 
             else push(JO_TOKEN_INTERP)
             break;
@@ -538,24 +550,25 @@ void jo_lex(jo_token* tokens, jo_token* stack[]) {
             break;
           case '\\':
             if(in_atom) term
-            else if(in_escape) escape(JO_TOKEN_SLUG, JO_CHAR_ESCAPE[t->data])
-            else upgrade(JO_TOKEN_ESCAPE)
+            else if(in_escape) escape
+            else push(JO_TOKEN_ESCAPE)
             break;
           case '\'':
             if(in_atom) term
             else if(cur->type == JO_TOKEN_STR1) pop
-            else if(in_escape) escape(JO_TOKEN_SLUG, JO_CHAR_ESCAPE[t->data])
+            else if(in_escape) escape
+            else if(in_slug) slugy
             else push(JO_TOKEN_STR1)
             break;
           case '"':
             if(in_atom) term
             else if(cur->type == JO_TOKEN_STR2) pop
-            else if(in_escape) escape(JO_TOKEN_SLUG, JO_CHAR_ESCAPE[t->data])\
-            else push(JO_TOKEN_STR1)
+            else if(in_escape) escape
+            else if(in_slug) slugy
+            else push(JO_TOKEN_STR2)
             break;
           default:
             if(in_atom) term
-            else if(in_escape) escape(JO_TOKEN_SLUG, JO_CHAR_ESCAPE[t->data])
             else if(in_slug) slugy
             else keep
             break;
@@ -566,12 +579,18 @@ void jo_lex(jo_token* tokens, jo_token* stack[]) {
     switch(todo) {
       case _APPEND:cur->len += t->len;t->type = 0;break;
       case _PUSH:stack[++sp]=t;t->type=payload;break;
-      case _UPGRADE:t->type=payload;stack[sp]=t; break;
+      // case _UPGRADE:t->type=payload;stack[++sp]=t; break;
+      case _ESC:cur->data = JO_CHAR_ESCAPE[t->data];sp--;t->type=0;cur->len++;break;
       case _POP:sp--;t->type = 0; break;
       case _SLUGY:t->type=JO_TOKEN_SLUG;break;
       case _REMOVE:t->type=0;break;
       case _TERM:t--;sp--;break;
       case _ERR: jo_echo("error parsing \n", 14); break;
+    }
+
+    if(sp < 0) {
+      jo_echo("error negative\n", 30);
+      return;
     }
   }
 #undef in_string
@@ -630,7 +649,7 @@ void print_token(const struct jo_token *t) {
 }
 
 int main() {
-  const char *input = "hi there {me is soo}";
+  const char *input = "{me is foo} &: //hi there ";
   jo_cursor cursor = {};
   jo_token token = {};
   jo_token tokens[1000];
@@ -649,3 +668,13 @@ int main() {
 }
 
 void jo_echo(const char *msg, size_t len) { printf("%.*s", (int)len, msg); }
+
+void jo_stry_int(long i, char *b) { sprintf(b, "%ld", i); }
+
+void jo_stry_uint(unsigned long i, char *b) { sprintf(b, "%lu", i); }
+
+void jo_stry_float(double f, char *b) {
+  sprintf(b, "%.6f", f); // tweak precision if needed
+}
+
+void jo_stry_bool(int v, char *b) { sprintf(b, "%s", v ? "true" : "false"); }
