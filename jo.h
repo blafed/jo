@@ -32,6 +32,14 @@ void jo_stry_uint(unsigned long i, char *buf);
 void jo_stry_float(double f, char *buf);
 void jo_stry_bool(int b, char *buf);
 
+int jo_parse_uint(unsigned long *out, const char *s, size_t n, int base);
+int jo_parse_float(double *out, const char *s, size_t n, int base);
+
+char jo_parse_int_full(long *i, const char *buf, size_t len);
+char jo_parse_uint_full(unsigned long *i, const char *buf, size_t len);
+char jo_parse_float_full(long double *i, const char *buf, size_t len);
+char jo_parse_bool_full(int *i, const char *buf, size_t len);
+
 enum jo_token_type : char {
   JO_TOKEN_NONE,
   JO_TOKEN_ID,    // sequence of alphabet (multiple)
@@ -50,6 +58,8 @@ enum jo_token_type : char {
   JO_TOKEN_SLUG,
   JO_TOKEN_COMMENT1, // //
   JO_TOKEN_COMMENT2, // /*
+  JO_TOKEN_KEYWORD,
+  JO_TOKEN_TERM,
 };
 
 static const unsigned char JO_CHAR_TYPE[256] = {
@@ -101,6 +111,7 @@ static const unsigned char JO_CHAR_ESCAPE[256] = {
 
 // clang-format off
 static const char *token_type_name(enum jo_token_type t) {
+  static char stuff[100] = "???";
   switch (t) {
   case JO_TOKEN_NONE:     return "NONE";
   case JO_TOKEN_ID:       return "ID";
@@ -117,34 +128,33 @@ static const char *token_type_name(enum jo_token_type t) {
   case JO_TOKEN_COMMENT1: return "//";
   case JO_TOKEN_COMMENT2: return "/*";
 
-
-  default:             return "??? ";
+  default:jo_stry_uint(t, stuff + 3); return stuff;
   }
 }
 // clang-format on
 
-enum Keyword : unsigned char {
-  JO_KEY_NONE,
-  JO_KEY_IF,
-  JO_KEY_ELSE,
-  JO_KEY_WHILE,
-  JO_KEY_DO,
-  JO_KEY_RETURN,
-  JO_KEY_BREAK,
-  JO_KEY_CONTINUE,
-  JO_KEY_WHEN,
+// enum Keyword : unsigned char {
+//   JO_KEY_NONE,
+//   JO_KEY_IF,
+//   JO_KEY_ELSE,
+//   JO_KEY_WHILE,
+//   JO_KEY_DO,
+//   JO_KEY_RETURN,
+//   JO_KEY_BREAK,
+//   JO_KEY_CONTINUE,
+//   JO_KEY_WHEN,
 
-  JO_KEY_IN,
-  JO_KEY_OF,
-  JO_KEY_STRUCT,
-  JO_KEY_ENUM,
-  JO_KEY_ALIAS,
-  JO_KEY_THIS,
+//   JO_KEY_IN,
+//   JO_KEY_OF,
+//   JO_KEY_STRUCT,
+//   JO_KEY_ENUM,
+//   JO_KEY_ALIAS,
+//   JO_KEY_THIS,
 
-  JO_KEY_TRUE,
-  JO_KEY_FALSE,
-  JO_KEY_NULL,
-};
+//   JO_KEY_TRUE,
+//   JO_KEY_FALSE,
+//   JO_KEY_NULL,
+// };
 
 enum Symbol : unsigned char {
   SYM_NONE = 0,
@@ -218,7 +228,7 @@ enum Symbol : unsigned char {
   SYM_COMMENT2_BEGIN, // /*
   SYM_COMMENT2_END,   // */
 
-  SYM_REF_EQ,        // &==
+  SYM_REF_EQ,        // ===
   SYM_SHL_EQ,        // <<=
   SYM_SHR_EQ,        // >>=
   SYM_TRIPLE_DQUOTE, // """
@@ -227,7 +237,6 @@ enum Symbol : unsigned char {
 
 };
 
-struct jo_ast {};
 struct jo_token {
   uint8_t type, data;
   int pos, line, col, len;
@@ -370,6 +379,7 @@ static inline enum Symbol jo_sym(const char* c, size_t len) {
             case '^': if (c[1] == '=') return SYM_XOR_EQ; break;
             case '=': if (c[1] == '=') return SYM_EQEQ;
                       if (c[1] == '>') return SYM_FATARROW;
+                      if (c[1] == '=' && c[2] == '=') return SYM_REF_EQ;
                       break;
             case '!': if (c[1] == '=') return SYM_NEQ; break;
         }
@@ -377,7 +387,6 @@ static inline enum Symbol jo_sym(const char* c, size_t len) {
 
     case 3:
         switch (c[0]) {
-			case '&': if (c[1] == '=' && c[2] == '=') return SYM_REF_EQ; break;
             case '<': if (c[1] == '<' && c[2] == '=') return SYM_SHL_EQ; break;
             case '>': if (c[1] == '>' && c[2] == '=') return SYM_SHR_EQ; break;
             case '"': if (c[1] == '"' && c[2] == '"') return SYM_TRIPLE_DQUOTE; break;
@@ -613,7 +622,493 @@ void jo_lex(jo_token* tokens, jo_token* stack[]) {
 #undef keep
 }
 
-// void jo_parse(jo_token* tokens) {}
+
+enum {
+  JO_KW_IF = 1, JO_KW_ELSE, JO_KW_FOR, JO_KW_WHEN, 
+  JO_KW_CONTINUE, JO_KW_BREAK, JO_KW_RETURN,
+  JO_KW_OF, JO_KW_IN, JO_KW_IS,
+  JO_KW_ME,
+  JO_KW_ENUM, JO_KW_STRUCT, 
+  JO_KW_REF,JO_KW_NEW,JO_KW_DEL, 
+  JO_KW_VOID,
+  JO_KW_ALIAS,
+  JO_KW_MAX,
+
+  JO_TP_STR,
+  JO_TP_VOIDPTR, JO_TP_CHARPTR, JO_TP_USIZE,
+  JO_TP_BYTE, JO_TP_SBYTE, JO_TP_SHORT, JO_TP_USHORT, JO_TP_INT, JO_TP_UINT,
+  JO_TP_LONG, JO_TP_ULONG, JO_TP_FLOAT, JO_TP_DOUBLE,
+  JO_VW_TRUE, JO_VW_FALSE, JO_VW_NULL,
+  JO_TP_INFER,
+};
+
+#include <stdint.h>
+#include <stddef.h>
+
+uint8_t jo_id_data(const char* s, size_t n) {
+    if (!s || !n) return 0;
+
+    switch (s[0]) {
+    case 'i':
+        if (n==2 && s[1]=='f') return JO_KW_IF;
+        if (n==3 && s[1]=='n' && s[2]=='t') return JO_TP_INT;
+        break;
+
+    case 'e':
+        if (n==4 && s[1]=='l' && s[2]=='s' && s[3]=='e') return JO_KW_ELSE;
+        if (n==4 && s[1]=='n' && s[2]=='u' && s[3]=='m') return JO_KW_ENUM;
+        break;
+
+    case 'f':
+        if (n==3 && s[1]=='o' && s[2]=='r') return JO_KW_FOR;
+        if (n==5 && s[1]=='l' && s[2]=='o' && s[3]=='a' && s[4]=='t') return JO_TP_FLOAT;
+        break;
+
+    case 'w':
+        if (n==4 && s[1]=='h' && s[2]=='e' && s[3]=='n') return JO_KW_WHEN;
+        break;
+
+    case 'o':
+        if (n==2 && s[1]=='f') return JO_KW_OF;
+        break;
+
+    case 'm':
+        if (n==2 && s[1]=='e') return JO_KW_ME;
+        break;
+
+    case 'c':
+        if (n==8 && s[1]=='o' && s[2]=='n' && s[3]=='t' && s[4]=='i' && s[5]=='n' && s[6]=='u' && s[7]=='e')
+            return JO_KW_CONTINUE;
+        if (n==7 && s[1]=='h' && s[2]=='a' && s[3]=='r' && s[4]=='p' && s[5]=='t' && s[6]=='r')
+            return JO_TP_CHARPTR;
+        break;
+
+    case 'b':
+        if (n==5 && s[1]=='r' && s[2]=='e' && s[3]=='a' && s[4]=='k') return JO_KW_BREAK;
+        if (n==4 && s[1]=='y' && s[2]=='t' && s[3]=='e') return JO_TP_BYTE;
+        break;
+
+    case 'r':
+        if (n==6 && s[1]=='e' && s[2]=='t' && s[3]=='u' && s[4]=='r' && s[5]=='n') return JO_KW_RETURN;
+        if (n==3 && s[1]=='e' && s[2]=='f') return JO_KW_REF;
+        break;
+
+    case 's':
+        if (n==3 && s[1]=='t' && s[2]=='r') return JO_TP_STR;
+        if (n==5 && s[1]=='b' && s[2]=='y' && s[3]=='t' && s[4]=='e') return JO_TP_SBYTE;
+        if (n==5 && s[1]=='h' && s[2]=='o' && s[3]=='r' && s[4]=='t') return JO_TP_SHORT;
+        if (n==6 && s[1]=='t' && s[2]=='r' && s[3]=='u' && s[4]=='c' && s[5]=='t') return JO_KW_STRUCT;
+        break;
+
+    case 'u':
+        if (n==6 && s[1]=='s' && s[2]=='h' && s[3]=='o' && s[4]=='r' && s[5]=='t') return JO_TP_USHORT;
+        if (n==5 && s[1]=='s' && s[2]=='i' && s[3]=='z' && s[4]=='e') return JO_TP_USIZE;
+        if (n==4 && s[1]=='i' && s[2]=='n' && s[3]=='t') return JO_TP_UINT;
+        if (n==5 && s[1]=='l' && s[2]=='o' && s[3]=='n' && s[4]=='g') return JO_TP_ULONG;
+        break;
+
+    case 'l':
+        if (n==4 && s[1]=='o' && s[2]=='n' && s[3]=='g') return JO_TP_LONG;
+        break;
+
+    case 'd':
+        if (n==6 && s[1]=='o' && s[2]=='u' && s[3]=='b' && s[4]=='l' && s[5]=='e') return JO_TP_DOUBLE;
+        if (n==3 && s[1]=='e' && s[2]=='l') return JO_KW_DEL;
+        break;
+
+    case 'n':
+        if (n==3 && s[1]=='e' && s[2]=='w') return JO_KW_NEW;
+        break;
+
+    case 'v':
+        if (n==4 && s[1]=='o' && s[2]=='i' && s[3]=='d') return JO_KW_VOID;
+        if (n==7 && s[1]=='o' && s[2]=='i' && s[3]=='d' && s[4]=='p' && s[5]=='t' && s[6]=='r')
+            return JO_TP_VOIDPTR;
+        break;
+    }
+
+    return 0;
+}
+
+void jo_iden(jo_token* tokens) {
+  jo_token* t = tokens;
+  for(;;t++) {
+    if (t->type == 0){
+      break;
+    }
+    if(t->type == JO_TOKEN_ID) {
+      t->data = jo_id_data(t->val, t->len);
+      if(t->data < JO_KW_MAX)  t->type = JO_TOKEN_KEYWORD;
+    }else if (t->type == JO_TOKEN_SEP && t->val[0] == '\n' || t->type == JO_TOKEN_SYM && t->data == ',') {
+      t->type = JO_TOKEN_TERM;
+    }
+  }
+}
+
+
+////////////// AST
+
+/*
+
+1. followers (eg. of)
+2. group -> pair usually
+3. terminate on terminator
+
+a b -> pair
+a b c -> pair(a, pair(b, c))
+foo()void -> pair(foo, pair((), void))
+x struct {} -> pair(x, pair(struct, {})
+if x y -> pair(if x, y)
+if x y else z -> pair(if x, pair(y, else z))
+for x in 0..10 x-> pair(bin(for x, in, 0..10), x)
+a {} + x -> bin(pair(a, {}), x)
+x + -y -> bin(x, +, un(y, -))
+x = () {} -> bin(x, =, pair((), {}))
+foo () 123 -> pair(foo, pair((), 123))
+if y - 100 - 100 -> pair(pair(if, bin(bin(y - 100), -, 100)))
+
+() {} wants its parent to be pair, not bin
+
+if x y -> ((if x) y)
+if x y {} -> ((if x) (y {}))
+if x + y {} -> ((if (x + y)) {})
+x = y {} -> (x = (y {}))
+if x = y {} -> ((if (x = y)) {})
+a-b bin
+a -b pair(un)
+a - b bin
+
+
+the 3 primtives:
+pair, bin, un
+
+//order is
+un, pair, bin
+
+
+resolve:
+turn asts into names
+turn names into types
+
+name -> {type, alias, path}
+x alias y
+z alias y
+foo(x int) {
+  if x == 0 {
+    y 0
+  }
+}
+foo
+foo.x
+foo.0.y
+
+
+handle macros and name aliases
+
+i32 # int
+foo (x i32) {}
+stuff {{foo, func}}
+
+x {
+}
+
+TP handling
+Unsuffixed literal → type of neighbor (if binary op) else int32
+Binary a op b → result type = highest(a.type, b.type)
+
+*/
+
+enum {
+  JO_REL_CONTAINER = 0, JO_REL_BIN = 1, JO_REL_UN, JO_REL_PAIR,
+};
+
+struct jo_rel {
+  int depth;
+  char type;
+  jo_token* tok;
+  size_t len;
+};
+
+typedef struct jo_rel jo_rel;
+
+int jo_precedence(jo_token* t, int has_lhs, int has_rhs){
+  if (!has_lhs)
+    return 100;
+  switch (t->type) {
+    case JO_TOKEN_SYM:
+      switch (t->data) {
+        case '*': case '/': return 3;
+        case '+': case '-': return has_lhs;
+      }
+      return t->data;
+  }
+  return -1;
+}
+
+// int jo_relate(jo_token* tokens, jo_rel *stack[], jo_rel* out) {
+//   jo_rel root = {.tok = tokens};
+//   int sp = 0;
+//   stack[sp++] = &root;
+
+//   enum {PUSH, POP, KILL, APPEND, TERM, SLUGY, REMOVE, ERR };
+//   #define pair todo = PUSH;
+//   #define bin todo = PUSH;
+//   #define un todo = PUSH;
+  
+
+
+
+//   for(jo_token* t = tokens;;t++){
+//     if (t->typ == 0) {
+//       break;
+//     }
+
+//   }
+
+// }
+
+enum JO_AST_TYPE{
+  JO_AST_BIN, JO_AST_UN,
+  JO_AST_NUM, JO_AST_ID, JO_AST_STR,
+
+  JO_AST_COMMAND,
+};
+
+struct jo_ast {
+  int depth;
+  enum JO_AST_TYPE type;
+  union{
+    struct {int a, b; uint8_t op;}bin;
+    struct {int x; uint8_t op;}un;
+    struct {int start, len;} block;
+    struct {int fn, args; } call;
+    struct {int a, b; } pair;
+    uint8_t opcode;
+    //atoms
+    struct {const char* val; size_t len;} atom;
+    struct {uint64_t val; size_t len; char tp;} num;
+  };
+};
+
+int jo_asty(jo_token* tokens, jo_ast* out) {
+
+  char want_term = 0;
+  for(jo_token* t = tokens; ; t++){
+    if (t->type == 0){
+      break;
+    }
+
+    if (want_term && t->type == JO_TOKEN_TERM) {
+      return 1;
+    }
+
+    switch (t->type) {
+      case JO_TOKEN_ID:
+        out->type = JO_AST_ID;
+        out->atom.val = t->val;
+        out->atom.len = t->len;
+        want_term = 1;
+        break;
+      case JO_TOKEN_NUM:
+        out->type = JO_AST_NUM;
+        out->num.tp = jo_parse_uint_full(&out->num.val, t->val, t->len);
+        break;
+    }
+  }
+}
+
+
+static inline int jo_digit_val(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+    if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+    return -1;
+}
+
+int jo_parse_uint(unsigned long *out, const char *s, size_t n, int base) {
+    unsigned long v = 0;
+
+    for (size_t i = 0; i < n; i++) {
+        char c = s[i];
+        if (c == '_') continue;
+
+        int d = jo_digit_val(c);
+        if (d < 0 || d >= base) return 0;
+
+        v = v * base + d;
+    }
+
+    *out = v;
+    return 1;
+}
+
+static uint8_t jo_suffix_tp(const char *s, size_t n) {
+    // short ones
+    if (n == 1) {
+      switch (s[0]) {
+        case 'b': return JO_TP_BYTE;
+        case 's': return JO_TP_SHORT;
+        case 'l': return JO_TP_LONG;
+        case 'u': return JO_TP_UINT;
+        case 'i': return JO_TP_INT;
+        case 'f': return JO_TP_FLOAT;
+        case 'd': return JO_TP_DOUBLE;
+      }
+    }
+
+    if (n==2 && s[0]=='u' && s[1]=='l') return JO_TP_ULONG;
+    if (n==2 && s[0]=='s' && s[1]=='b') return JO_TP_SBYTE;
+    if (n==2 && s[0]=='u' && s[1]=='s') return JO_TP_USHORT;
+
+    // sized
+    if (n==2 && s[0]=='i' && s[1]=='8') return JO_TP_SBYTE;
+    if (n==2 && s[0]=='u' && s[1]=='8') return JO_TP_BYTE;
+
+    if (n==3 && s[0]=='i' && s[1]=='1' && s[2]=='6') return JO_TP_SHORT;
+    if (n==3 && s[0]=='u' && s[1]=='1' && s[2]=='6') return JO_TP_USHORT;
+
+    if (n==3 && s[0]=='i' && s[1]=='3' && s[2]=='2') return JO_TP_INT;
+    if (n==3 && s[0]=='u' && s[1]=='3' && s[2]=='2') return JO_TP_UINT;
+
+    if (n==3 && s[0]=='i' && s[1]=='6' && s[2]=='4') return JO_TP_LONG;
+    if (n==3 && s[0]=='u' && s[1]=='6' && s[2]=='4') return JO_TP_ULONG;
+
+    return 0;
+}
+
+static inline int jo_is_alphanum(unsigned char c) {
+    return (c - '0' < 10) |
+           ((c | 32) - 'a' < 26);
+}
+
+char jo_parse_uint_full(unsigned long *out, const char *buf, size_t len) {
+  if(!len) return 0;
+  
+  int base = 10;
+  size_t i = 0;
+
+  if (len > 2 && buf[0] == '0') {
+    switch (buf[1]) {
+      case 'b': base = 2; i = 2; break;
+      case 'o': base = 8; i = 2; break;
+      case 'x': base = 16; i = 2; break;
+    }
+  }
+
+  size_t num_end = i;
+  while(num_end < len) {
+    char c = buf[num_end];
+    if (c == '_' || jo_is_alphanum(c)) continue;
+    else break;
+  }
+
+  if(!jo_parse_uint(out, buf, len, base))
+    return 0;
+
+  char tp = jo_suffix_tp(&buf[num_end], len - num_end);
+
+  return tp == 0? JO_TP_INFER : tp;
+}
+
+// void jo_asty(jo_token* tokens, jo_ast* list){
+
+//   enum {_NONE, _KW, _ATOM, _BIN, _UN} state = _ATOM;
+//   jo_token * seq[100];
+//   int depth = 0;
+  
+//   int sp = 0;
+//   jo_ast stack[100];
+
+//   for(jo_token* t = tokens; ; t++){
+//     if(t->type == 0) break;
+//     if(t->type == JO_TOKEN_EMPTY) continue;
+//     jo_ast* cur = &stack[sp];
+    
+//     switch (t->type) {
+//       case JO_TOKEN_ID:
+//       case JO_TOKEN_NUM:
+//         cur->type = JO_AST_ID;
+//         cur->atom.val = t->val;
+//         cur->atom.len = t->len;
+//         break;
+//     }
+//   }
+
+//   for(jo_token* t = tokens; ; t++){
+//     if(t->type == 0) break;
+//     if(t->type == JO_TOKEN_EMPTY) continue;
+//     if(t->depth != depth) continue;
+
+//     switch (state) {
+//       case _NONE:
+//         if(t->type == JO_TOKEN_SYM) state = _UN;
+//         else if(t->type == JO_TOKEN_KEYWORD) state = _KW;
+//         else state = _ATOM;
+//         break;
+//       case _ATOM:
+//         if(t->type == JO_TOKEN_SYM) state = _BIN;
+//         break;
+//       case _KW
+//     }
+
+//     if(t->type == JO_TOKEN_SYM && t->data == SYM_PLUS) {
+//       t->type = JO_TOKEN_SYM;
+//       t->data = JO_BIN_ADD;
+//     }
+//   }
+// }
+
+// enum {
+//     JO_BIN_ADD = SYM_PLUS,
+//     JO_BIN_SUB = SYM_MINUS,
+//     JO_BIN_MUL = SYM_STAR,
+//     JO_BIN_DIV = SYM_SLASH,
+//     JO_BIN_MOD = SYM_MOD_EQ,
+//     JO_BIN_XOR = SYM_CARET,
+
+//     JO_BIN_LT = SYM_LT,
+//     JO_BIN_GT = SYM_GT,
+//     JO_BIN_LTE = SYM_LTE,
+//     JO_BIN_GTE = SYM_GTE,
+
+
+//     JO_BIN_EQ = SYM_EQ,
+//     JO_BIN_EQEQ = SYM_EQEQ,
+//     JO_BIN_EQEQEQ = SYM_REF_EQ,
+
+//     JO_BIN_CONCAT = SYM_INC,
+// };
+
+/*
+
+foo(x) if x 0
+foo(x) if x + y < 0 z
+bar(x) x{foo}
+
+if x y else z
+if x -y -z
+
+ATOMS
+A()
+A[]
+A{}
+A..B
+A:B
+keyword A {}
+keywordX A A {}
+
+COMPOSITES
+A B //pair
+
+
+A(b) //func call
+
+A B   //pair
+*/
+
+void jo_parse(jo_token* tokens) {
+
+}
 
 // clang-format on
 
@@ -628,7 +1123,7 @@ void jo_lex(jo_token* tokens, jo_token* stack[]) {
 #include <stdio.h>
 
 void print_token(const struct jo_token *t) {
-  if (!t->type)
+  if (!t->type || t->type == JO_TOKEN_EMPTY)
     return;
 
   // indentation via depth
@@ -649,7 +1144,7 @@ void print_token(const struct jo_token *t) {
 }
 
 int main() {
-  const char *input = "{me is foo} &: //hi there ";
+  const char *input = "foo(x int, y int) x + y + z";
   jo_cursor cursor = {};
   jo_token token = {};
   jo_token tokens[1000];
@@ -660,6 +1155,7 @@ int main() {
     ;
   jo_tok_sym(tokens);
   jo_lex(tokens, stack);
+  jo_iden(tokens);
   for (int j = 0; j < i; j++) {
     print_token(&tokens[j]);
   }
