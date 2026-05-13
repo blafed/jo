@@ -32,8 +32,8 @@ void jo_stry_uint(unsigned long i, char *buf);
 void jo_stry_float(double f, char *buf);
 void jo_stry_bool(int b, char *buf);
 
-int jo_parse_uint(unsigned long *out, const char *s, size_t n, int base);
-int jo_parse_float(double *out, const char *s, size_t n, int base);
+char jo_parse_uint(unsigned long *out, const char *s, size_t n, int base);
+char jo_parse_float(double *out, const char *s, size_t n, int base);
 
 char jo_parse_int_full(long *i, const char *buf, size_t len);
 char jo_parse_uint_full(unsigned long *i, const char *buf, size_t len);
@@ -133,29 +133,6 @@ static const char *token_type_name(enum jo_token_type t) {
 }
 // clang-format on
 
-// enum Keyword : unsigned char {
-//   JO_KEY_NONE,
-//   JO_KEY_IF,
-//   JO_KEY_ELSE,
-//   JO_KEY_WHILE,
-//   JO_KEY_DO,
-//   JO_KEY_RETURN,
-//   JO_KEY_BREAK,
-//   JO_KEY_CONTINUE,
-//   JO_KEY_WHEN,
-
-//   JO_KEY_IN,
-//   JO_KEY_OF,
-//   JO_KEY_STRUCT,
-//   JO_KEY_ENUM,
-//   JO_KEY_ALIAS,
-//   JO_KEY_THIS,
-
-//   JO_KEY_TRUE,
-//   JO_KEY_FALSE,
-//   JO_KEY_NULL,
-// };
-
 enum Symbol : unsigned char {
   SYM_NONE = 0,
 
@@ -248,6 +225,9 @@ struct jo_token {
 };
 struct jo_cursor {
   int pos, line, col;
+  int error;
+  const char *msg;
+  size_t msg_len;
 };
 
 typedef struct jo_token jo_token;
@@ -622,24 +602,30 @@ void jo_lex(jo_token* tokens, jo_token* stack[]) {
 #undef keep
 }
 
-
 enum {
-  JO_KW_IF = 1, JO_KW_ELSE, JO_KW_FOR, JO_KW_WHEN, 
+  JO_KW_IF = 1, JO_KW_FOR, JO_KW_ON, //kw2
+  JO_KW_ASS, JO_KW_DID,
+  JO_KW_EL, //kw1
   JO_KW_CONTINUE, JO_KW_BREAK, JO_KW_RETURN,
-  JO_KW_OF, JO_KW_IN, JO_KW_IS,
+  JO_KW_OF,
+  JO_KW_IN, JO_KW_BY, JO_KW_TO,
   JO_KW_ME,
   JO_KW_ENUM, JO_KW_STRUCT, 
-  JO_KW_REF,JO_KW_NEW,JO_KW_DEL, 
+  JO_KW_REF,JO_KW_NEW,JO_KW_DEL, JO_KW_MOV,
   JO_KW_VOID,
   JO_KW_ALIAS,
+
   JO_KW_MAX,
 
-  JO_TP_STR,
+  JO_TP_STR = 1,
   JO_TP_VOIDPTR, JO_TP_CHARPTR, JO_TP_USIZE,
   JO_TP_BYTE, JO_TP_SBYTE, JO_TP_SHORT, JO_TP_USHORT, JO_TP_INT, JO_TP_UINT,
-  JO_TP_LONG, JO_TP_ULONG, JO_TP_FLOAT, JO_TP_DOUBLE,
+  JO_TP_LONG, JO_TP_ULONG,
+  JO_TP_FLOAT, JO_TP_DOUBLE,
   JO_VW_TRUE, JO_VW_FALSE, JO_VW_NULL,
   JO_TP_INFER,
+
+  JO_TP_BUN, JO_TP_REF, JO_TP_NEW, JO_TP_STRUCT, JO_TP_ENUM,
 };
 
 #include <stdint.h>
@@ -655,17 +641,17 @@ uint8_t jo_id_data(const char* s, size_t n) {
         break;
 
     case 'e':
-        if (n==4 && s[1]=='l' && s[2]=='s' && s[3]=='e') return JO_KW_ELSE;
+        if (n==4 && s[1]=='l' && s[2]=='s' && s[3]=='e') return JO_KW_EL;
         if (n==4 && s[1]=='n' && s[2]=='u' && s[3]=='m') return JO_KW_ENUM;
         break;
 
-    case 'f':
         if (n==3 && s[1]=='o' && s[2]=='r') return JO_KW_FOR;
+        case 'f':
         if (n==5 && s[1]=='l' && s[2]=='o' && s[3]=='a' && s[4]=='t') return JO_TP_FLOAT;
         break;
 
     case 'w':
-        if (n==4 && s[1]=='h' && s[2]=='e' && s[3]=='n') return JO_KW_WHEN;
+        if (n==4 && s[1]=='h' && s[2]=='e' && s[3]=='n') return JO_KW_ON;
         break;
 
     case 'o':
@@ -745,8 +731,64 @@ void jo_iden(jo_token* tokens) {
   }
 }
 
+//reduce the code into groups, gather sequences
+void jo_scope(jo_token* tokens) {
+  jo_token* t = tokens;
+
+}
+
 
 ////////////// AST
+
+
+///////////// SIM
+// struct jo_sim{
+
+// };
+
+
+// struct jo_type {
+//   jo_id base;
+//   size_t child_len;
+// };
+
+// struct jo_var {
+//   const char* name;
+//   jo_type* type;
+//   int value;
+// };
+
+// struct jo_func {
+//   const char* name;
+//   jo_type* ret;
+//   jo_var* args;
+//   jo_sim * body;
+//   size_t args_len;
+// };
+
+// struct jo_value {
+//   union{
+//     uint64_t u64;
+//     int64_t i64;
+//     double f64;
+//     jo_sim* sim;
+//   };
+// };
+
+// struct jo_sim {
+//   struct jo_type* types;
+//   struct jo_var* vars;
+//   struct jo_value* values;
+//   struct jo_func* funcs;
+//   size_t vars_len;
+//   size_t types_len;
+//   size_t funcs_len;
+//   size_t values_len;
+// };
+
+
+// void jo_emit(jo_sim* sim) {
+// }
 
 /*
 
@@ -868,8 +910,11 @@ int jo_precedence(jo_token* t, int has_lhs, int has_rhs){
 // }
 
 enum JO_AST_TYPE{
+  JO_AST_BLOCK,
   JO_AST_BIN, JO_AST_UN,
   JO_AST_NUM, JO_AST_ID, JO_AST_STR,
+
+  JO_AST_PAIR,
 
   JO_AST_COMMAND,
 };
@@ -878,44 +923,175 @@ struct jo_ast {
   int depth;
   enum JO_AST_TYPE type;
   union{
+    uint8_t opcode;
     struct {int a, b; uint8_t op;}bin;
     struct {int x; uint8_t op;}un;
     struct {int start, len;} block;
     struct {int fn, args; } call;
     struct {int a, b; } pair;
-    uint8_t opcode;
     //atoms
     struct {const char* val; size_t len;} atom;
-    struct {uint64_t val; size_t len; char tp;} num;
+    struct {union{uint64_t u64; long double f64;}; size_t len; char tp;} num;
   };
 };
 
-int jo_asty(jo_token* tokens, jo_ast* out) {
+// jo_ast jo_ast_token(const jo_token* token){
+//   switch (token->type) {
+//     case JO_TOKEN_ID:
+//       return (jo_ast){.token = token, .type = JO_AST_ID, .atom.val = token->val, .atom.len = token->len};
+//     case JO_TOKEN_NUM:
+//       return (jo_ast){.token = token, .type = JO_AST_NUM, .num.val = token->val, .num.len = token->len};
+//   }
+// }
 
-  char want_term = 0;
+// jo_ast jo_asty_arith(const jo_token* tokens) {
+
+//   for (const jo_token* t = tokens; ;t++){
+//     if (t->type == 0) break;
+//     if(t->type == JO_TOKEN_EMPTY) continue;
+//     switch (t->type) {
+    
+//     }
+//   }
+// }
+
+static uint8_t jo_suffix_tp(const char* c, size_t len);
+
+void jo_ast_error(jo_cursor* cursor, const char* msg, size_t len) {
+
+}
+
+int jo_ast_num(jo_token* t, jo_ast* ast) {
+  ast->type = JO_AST_NUM;
+  ast->num.tp = jo_suffix_tp(t->val + t->len - 2, t->len); 
+
+  switch (ast->num.tp) {
+    case JO_TP_FLOAT: case JO_TP_DOUBLE:
+      jo_parse_float_full(&ast->num.f64, t->val, t->len);
+
+  }
+
+  return 0;
+}
+
+int jo_asty(jo_cursor* cursor, const jo_token* tokens, jo_ast* out) {
+
+  #define push(i) 
+
+  jo_ast ast;
   for(jo_token* t = tokens; ; t++){
-    if (t->type == 0){
-      break;
-    }
-
-    if (want_term && t->type == JO_TOKEN_TERM) {
-      return 1;
-    }
-
-    switch (t->type) {
-      case JO_TOKEN_ID:
-        out->type = JO_AST_ID;
-        out->atom.val = t->val;
-        out->atom.len = t->len;
-        want_term = 1;
-        break;
-      case JO_TOKEN_NUM:
-        out->type = JO_AST_NUM;
-        out->num.tp = jo_parse_uint_full(&out->num.val, t->val, t->len);
-        break;
+    switch ((enum jo_token_type)t->type) {
+      case JO_TOKEN_ID:  break;
+      case JO_TOKEN_NUM:  break; 
+      case JO_TOKEN_SEP: break;
+      case JO_TOKEN_STR1: break;
+      case JO_TOKEN_STR2: break;
+      case JO_TOKEN_COMMENT1: break;
     }
   }
+
+  #undef push
 }
+
+// int jo_asty(const jo_token* tokens, jo_ast* out) { 
+//   const jo_token* stack[256];
+//   int state[256];
+//   int contexts[256];
+//   const jo_token *depth[256];
+
+//   int sp = 0;
+//   int cp = 0;
+//   int dp = 0;
+
+//   /*
+//   arith
+//   x + y 
+
+//   kw1
+//   else z
+
+//   kw2
+//   if x y
+
+//   first_pair
+//   when { x 'hi there' + 's' }
+//   */
+//   enum {c_arith, c_kw1, c_kw2, c_first_pair};
+//   enum {s_none, s_bin};
+
+//   stack[sp] = &tokens[0];
+//   state[sp] = 0;
+//   contexts[cp] = 0;
+//   jo_ast ast = {};
+  
+//   enum {push = 1, pop, build, unshift, hijack, enter, leave, out_atom};
+  
+//   for(const jo_token* t = tokens; ; t++){
+//     const jo_token* cur = stack[sp];
+//     char todo = 0;
+//     char payload = 0;
+//     if(t->type == 0) break;
+//     if(t->type == JO_TOKEN_EMPTY) continue;
+
+//     if(t->depth != cur->depth) {
+//       //TODO
+//     }
+
+//     switch (t->type) {
+//       case JO_TOKEN_ID:
+//         switch (cur->type) {
+//           case JO_TOKEN_ID:
+//           case JO_TOKEN_NUM: todo = build; payload = JO_AST_PAIR; break;
+//           case JO_TOKEN_SYM:
+//             switch (state[sp]) {
+//               case s_bin: todo = build; payload = JO_AST_BIN; break;
+//             }
+//             break;
+
+//         }
+//         break;
+//       case JO_TOKEN_SYM:
+//         switch (cur->type) {
+//           case JO_TOKEN_ROOT: todo = push; break;
+//           case JO_TOKEN_NUM:
+//           case JO_TOKEN_ID: todo = push; payload = s_bin; break;
+
+//         }
+//         break;
+//     }
+
+//     switch (todo) {
+//       case push: stack[sp++] = t; break;
+//       case pop: sp--; break;
+//       case enter: depth[dp++] = t; break;
+//       case leave: t = depth[--dp]; break;
+//     }
+//   }
+
+//   char want_term = 0;
+//   for(jo_token* t = tokens; ; t++){
+//     if (t->type == 0){
+//       break;
+//     }
+
+//     if (want_term && t->type == JO_TOKEN_TERM) {
+//       return 1;
+//     }
+
+//     switch (t->type) {
+//       case JO_TOKEN_ID:
+//         out->type = JO_AST_ID;
+//         out->atom.val = t->val;
+//         out->atom.len = t->len;
+//         want_term = 1;
+//         break;
+//       case JO_TOKEN_NUM:
+//         out->type = JO_AST_NUM;
+//         out->num.tp = jo_parse_uint_full(&out->num.val, t->val, t->len);
+//         break;
+//     }
+//   }
+// }
 
 
 static inline int jo_digit_val(char c) {
@@ -925,7 +1101,7 @@ static inline int jo_digit_val(char c) {
     return -1;
 }
 
-int jo_parse_uint(unsigned long *out, const char *s, size_t n, int base) {
+char jo_parse_uint(unsigned long *out, const char *s, size_t n, int base) {
     unsigned long v = 0;
 
     for (size_t i = 0; i < n; i++) {
@@ -976,6 +1152,45 @@ static uint8_t jo_suffix_tp(const char *s, size_t n) {
     return 0;
 }
 
+static char jo_num_tp(const char* s, size_t n) {
+  if (n == 0) return 0;
+  if (n == 1) return JO_TP_INFER;
+  if(n >= 3) {char tp = jo_suffix_tp(s + n - 3, 3); if(tp) return tp;}
+  if(n >= 2) {char tp = jo_suffix_tp(s + n - 2, 2); if(tp) return tp;}
+  return jo_suffix_tp(s + n - 1, 1);
+}
+
+// static uint8_t jo_num_tp(const char* nums, size_t len) {
+//   if(len < 0) return 0;
+
+//   char buf[3];
+//   size_t l;
+
+//   switch (nums[len-1]) {
+//     case 's':
+//     case 'l':
+//     case 'u':
+//     case 'i':
+//     case 'f':
+//     case 'd':
+//     case 'b': l = 1; break;
+//   }
+
+//   if (nums[len - 1] == 'l')
+
+//   jo_suffix_tp(buf, l);
+
+//   char last = nums[len - 1];
+
+
+//   for(size_t i = len - 1; i >= 0; i++) {
+//     switch (s[i]) {
+//       case ''
+//     }
+//   }
+//   return JO_TP_INFER;
+// }
+
 static inline int jo_is_alphanum(unsigned char c) {
     return (c - '0' < 10) |
            ((c | 32) - 'a' < 26);
@@ -1009,6 +1224,8 @@ char jo_parse_uint_full(unsigned long *out, const char *buf, size_t len) {
 
   return tp == 0? JO_TP_INFER : tp;
 }
+
+
 
 // void jo_asty(jo_token* tokens, jo_ast* list){
 
