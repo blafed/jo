@@ -15,5 +15,5 @@
 # SYNTAX
 
 ```c
-{{ex/101.jo}}
+{{#include ex/101.jo}}
 ```
