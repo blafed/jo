@@ -15,5 +15,5 @@
 # SYNTAX
 
 ```c
-{{path/to/file.c}}
+{{ex/101.jo}}
 ```
