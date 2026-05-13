@@ -12,8 +12,6 @@
 - [ ] simulation (validation, ...)
 - [ ] emit (clean c code)
 
-# SYNTAX
+# Syntax
 
-```c
-{{#include ex/101.jo}}
-```
+See [`ex/101.jo`](ex/101.jo)
