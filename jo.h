@@ -1,3 +1,7 @@
+#define JO_USE_IMPL
+
+#ifndef JO_H
+#define JO_H
 #include <stddef.h>
 
 void* jo_new(unsigned long size);                           // heap alloc
@@ -8,7 +12,6 @@ void jo_echo(const char* s, size_t len);                    //print
 
 size_t jo_fmt(char* buf, const char* fmt, ...); //sprintf
 
-// int jo_parse_uint(unsigned long* out, const char* s, int n, int base);
 int jo_stry_uint(unsigned long i, char* buf, int base);
 int jo_stry_float(double f, char* buf);
 
@@ -66,25 +69,29 @@ struct Token {
     int depth;
 };
 
-struct Cursor {
-    int pos;
-    int line, col;
-};
-
 typedef struct Token Token;
 typedef struct Value Value;
 typedef struct Cursor Cursor;
 
-int tokenize(const char* src, struct Token* list);
-struct Token* organize(struct Token* list, struct Token* stack[]);
+int tokenize(const char* src, Token* list);
+Token* organize(Token* list, Token* stack[]);
 int serialize(Value value, char* out);
-const struct Value* parse(struct Token* list, int* stack, int* out_len);
+Token* parse(Token* tokens, Value* obj);
 
 enum {
     TOK_SLASH_SLASH = 128,
 };
 
 const char* tokentype_name(enum TokenType type);
+void token_print(const Token* t);
+#endif
+
+#ifdef JO_USE_IMPL
+
+struct Cursor {
+    int pos;
+    int line, col;
+};
 
 static char token_type(char c) {
     if (c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z') return TOK_ID;
@@ -103,14 +110,14 @@ static unsigned char sym_type(const char* seq, int len) {
     return seq[0];
 }
 
-int next(const char* src, struct Cursor* cur, struct Token* out) {
+int next(const char* src, struct Cursor* cur, Token* out) {
     char prev = 0;
     while (1) {
         char c = src[cur->pos];
         char type = token_type(c);
         if (prev && type != prev) break;
         if (!prev)
-            *out = (struct Token){.type = type, .col = cur->col, .line = cur->line, .pos = cur->pos, .val = src + cur->pos, .data = c};
+            *out = (Token){.type = type, .col = cur->col, .line = cur->line, .pos = cur->pos, .val = src + cur->pos, .data = c};
         out->len++;
 
         prev = type;
@@ -134,7 +141,7 @@ int next(const char* src, struct Cursor* cur, struct Token* out) {
     return out->type;
 }
 
-int tokenize(const char* src, struct Token* list) {
+int tokenize(const char* src, Token* list) {
     struct Cursor cursor = {};
     int i = 0;
     while (next(src, &cursor, &list[i]))
@@ -142,9 +149,9 @@ int tokenize(const char* src, struct Token* list) {
     return i;
 }
 
-static struct Token ROOT_TOKEN = {.type = 100, .depth = 0};
+static Token ROOT_TOKEN = {.type = 100, .depth = 0};
 
-struct Token* organize(struct Token* list, struct Token* stack[]) {
+Token* organize(Token* list, Token* stack[]) {
     enum {
         NOTHING,
         APPEND, //append to current
@@ -174,7 +181,7 @@ struct Token* organize(struct Token* list, struct Token* stack[]) {
 #define in_comment cur->type == TOK_COMMENT
 #define in_fragy (in_string || in_comment)
 
-    struct Token* cur;
+    Token* cur;
     int sp = 0;
 
     int todo = 0;
@@ -182,7 +189,7 @@ struct Token* organize(struct Token* list, struct Token* stack[]) {
 
     stack[sp] = &ROOT_TOKEN;
 
-    for (struct Token* t = list; t->type ; t++) {
+    for (Token* t = list; t->type ; t++) {
         todo = 0;
         cur = stack[sp];
         t->depth = cur->depth + 1;
@@ -277,8 +284,8 @@ struct Token* organize(struct Token* list, struct Token* stack[]) {
         }
     }
 
-    struct Token* c = NULL;
-    for(struct Token* t = list; t->type; t++) {
+    Token* c = NULL;
+    for(Token* t = list; t->type; t++) {
         if(t->type == TOK_COMMENT) t->type = TOK_EMPTY;
         if(t->type == TOK_TERM) {
             if(c && c->depth == t->depth) t->type = TOK_EMPTY;
@@ -306,8 +313,8 @@ struct Token* organize(struct Token* list, struct Token* stack[]) {
     return NULL;
 }
 
-struct Value* value_exp(struct Value* v, int len) {
-    return jo_exp(v, sizeof(struct Value) * len);
+Value* value_exp(Value* v, int len) {
+    return jo_exp(v, sizeof(Value) * len);
 }
 
 char* str_alloc(const char* from, int len) {
@@ -417,24 +424,24 @@ int parse_fracture(double* out, const char* s, size_t n) {
     return dec;
 }
 
-static inline struct Token* skip_empty(struct Token* tok) {
+static inline Token* skip_empty(Token* tok) {
     while (tok->type == TOK_EMPTY) tok++;
     return tok;
 }
 
-static inline struct Token* get_next(struct Token* tok) {
+static inline Token* get_next(Token* tok) {
     tok++;
     return skip_empty(tok);
 }
 
-static inline struct Token* get_prev(struct Token* tok) {
+static inline Token* get_prev(Token* tok) {
     tok--;
     while (tok->type == TOK_EMPTY) tok--;
     return tok;
 }
 
-struct Token* parse_dec(struct Token* start, struct Value* out) {
-    struct Token* t = start;
+Token* parse_dec(Token* start, Value* out) {
+    Token* t = start;
     if (t->type != TOK_DOT)
         return start;
     t = get_next(t);
@@ -452,8 +459,8 @@ struct Token* parse_dec(struct Token* start, struct Value* out) {
     return t;
 }
 
-struct Token* parse_int(struct Token* start, struct Value* out) {
-    struct Token* t = start;
+Token* parse_int(Token* start, Value* out) {
+    Token* t = start;
     unsigned long l = 0;
     if (parse_uint(&l, t->val, t->len, 10) == t->len) {
         *out = (Value){.i = l, .type = VAL_INT};
@@ -462,8 +469,8 @@ struct Token* parse_int(struct Token* start, struct Value* out) {
     return t;
 }
 
-struct Token* parse_num(struct Token* start, struct Value* out) {
-    struct Token* t = start;
+Token* parse_num(Token* start, Value* out) {
+    Token* t = start;
     int sign = 1;
     if (t->type == TOK_OP) {
         if (t->data == '-')
@@ -474,7 +481,7 @@ struct Token* parse_num(struct Token* start, struct Value* out) {
     if (t->type == TOK_DOT) {
         unsigned long l = out->i;
         out->f = l;
-        struct Token* n = parse_dec(t, out);
+        Token* n = parse_dec(t, out);
         if (n == t)
             out->i = l;
         else
@@ -487,8 +494,8 @@ struct Token* parse_num(struct Token* start, struct Value* out) {
     return t;
 }
 
-struct Token* parse_id(struct Token* start, struct Value* out) {
-    struct Token* t = start;
+Token* parse_id(Token* start, Value* out) {
+    Token* t = start;
     if (t->type == TOK_ID) {
         *out = (Value){.type = VAL_ID, .s = str_alloc(start->val, start->len), .len = start->len};
         t = get_next(t);
@@ -496,12 +503,12 @@ struct Token* parse_id(struct Token* start, struct Value* out) {
     return t;
 }
 
-struct Token* parse_str(struct Token* start, struct Value* out) {
-    struct Token* t = start;
+Token* parse_str(Token* start, Value* out) {
+    Token* t = start;
     if (t->type != TOK_STRING)
         return t;
 
-    *out = (struct Value){.type = VAL_STR, .s = jo_exp(NULL, 1), .len = 0};
+    *out = (Value){.type = VAL_STR, .s = jo_exp(NULL, 1), .len = 0};
     out->s[out->len] = 0;
 
     t = get_next(t);
@@ -514,10 +521,10 @@ struct Token* parse_str(struct Token* start, struct Value* out) {
     return t;
 }
 
-struct Token* parse_any(struct Token* tok, struct Value* out);
+Token* parse_any(Token* tok, Value* out);
 
-struct Token* parse_kv(struct Token* start, struct Value* k, struct Value* v) {
-    struct Token* t = start;
+Token* parse_kv(Token* start, Value* k, Value* v) {
+    Token* t = start;
     if (t->type == TOK_ID) {
         t = parse_id(t, k);
         t = skip_empty(t);
@@ -529,16 +536,16 @@ struct Token* parse_kv(struct Token* start, struct Value* k, struct Value* v) {
     return t;
 }
 
-struct Token* parse_arr(struct Token* start, struct Value* out) {
-    struct Token* t = start;
+Token* parse_arr(Token* start, Value* out) {
+    Token* t = start;
     int cap = out->len;
     if (t->type == TOK_TERM)
         t = get_next(t);
     for (;;) {
         t = skip_empty(t);
 
-        struct Value el = {};
-        struct Token* n = parse_any(t, &el);
+        Value el = {};
+        Token* n = parse_any(t, &el);
         if (n == t || n == NULL)
             break;
         else
@@ -563,8 +570,8 @@ struct Token* parse_arr(struct Token* start, struct Value* out) {
     return t;
 }
 
-struct Token* parse_arr_kv(struct Token* start, struct Value* out) {
-    struct Token* t = start;
+Token* parse_arr_kv(Token* start, Value* out) {
+    Token* t = start;
     int cap = out->len;
 
     if (t->type == TOK_TERM)
@@ -572,8 +579,8 @@ struct Token* parse_arr_kv(struct Token* start, struct Value* out) {
     for (;;) {
         t = skip_empty(t);
 
-        struct Value k = {}, v = {};
-        struct Token* n = parse_kv(t, &k, &v);
+        Value k = {}, v = {};
+        Token* n = parse_kv(t, &k, &v);
         if (t == n || n == NULL)
             break;
         else
@@ -598,17 +605,17 @@ struct Token* parse_arr_kv(struct Token* start, struct Value* out) {
     return t;
 }
 
-int is_kv(struct Token* tok) {
+int is_kv(Token* tok) {
     if (tok->type == TOK_ID) {
-        struct Token* t = get_next(tok);
+        Token* t = get_next(tok);
         if (t->type != TOK_TERM && t->type != TOK_NONE && t->depth == tok->depth)
             return 1;
     }
     return 0;
 }
 
-struct Token* parse_root(struct Token* start, struct Value* out) {
-    struct Token* t = start;
+Token* parse(Token* start, Value* out) {
+    Token* t = start;
     t = skip_empty(t);
     if (is_kv(t)) {
         out->type = VAL_OBJ;
@@ -621,16 +628,16 @@ struct Token* parse_root(struct Token* start, struct Value* out) {
     return t;
 }
 
-struct Token* parse_group(struct Token* start, struct Value* out) {
-    struct Token* t = start;
+Token* parse_group(Token* start, Value* out) {
+    Token* t = start;
     if (t->type == TOK_GROUP) {
         t = get_next(t);
-        t = parse_root(t, out);
+        t = parse(t, out);
     }
     return t;
 }
 
-struct Token* parse_any(struct Token* tok, struct Value* out) {
+Token* parse_any(Token* tok, Value* out) {
     switch (tok->type) {
         case TOK_NUM:
         case TOK_OP:     return parse_num(tok, out);
@@ -659,7 +666,7 @@ const char* tokentype_name(enum TokenType type) {
     }
 }
 
-void token_print(struct Token* t) {
+void token_print(const Token* t) {
     if (!t->type || t->type == TOK_EMPTY)
         return;
 
@@ -683,6 +690,8 @@ void token_print(struct Token* t) {
     p += jo_fmt(buf + p, "\"\n");
     jo_echo(buf, p);
 }
+
+#endif
 
 #ifdef JO_USE_LINUX
 #include <stdio.h>

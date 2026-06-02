@@ -7,11 +7,6 @@
 
 
 # Roadmap
-- [X] 0.1: data language
-- [ ] 0.2: adding booleans, nil and float E notation
-- [ ] 0.3: eval const expressions
-
-# Syntax
-See [`ex/0.1.jo`](ex/0.1.jo)
-See [`ex/0.2.jo`](ex/0.1.jo)
-See [`ex/0.3.jo`](ex/0.1.jo)
+- [X] [`0.1`](ex/0.1.jo): data language 
+- [ ] [`0.2`](ex/0.2.jo): adding booleans, nil and float E notation + C api
+- [ ] [`0.3`](ex/0.3.jo): eval const expressions + let the parser manage its own memory

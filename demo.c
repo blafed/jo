@@ -1,5 +1,7 @@
 #define JO_USE_LINUX
+#define JO_USE_IMPL
 #include "jo.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -17,31 +19,12 @@ size_t file(const char* path, char** out) {
     return fsize;
 }
 
-void file_write(const char* path, const char* data, size_t len) {
-    FILE* f = fopen(path, "wb");
-
-    if (!f) {
-        perror(path);
-        abort();
-    }
-
-    size_t written = fwrite(data, 1, len, f);
-
-    fclose(f);
-
-    if (written != len)
-        abort();
-}
-
 int main() {
-    // const char src[] = "foo 'hi there'";
-
-    char* src = "foo";
+    char* src;
     size_t fsize = file("ex/0.1.jo", &src);
-    // printf("%s %i", src, src[2]);
 
-    static struct Token tokens[10000];
-    static struct Token* stack[256];
+    static Token tokens[10000];
+    static Token* stack[256];
 
     int len = tokenize(src, tokens);
     organize(tokens, stack);
@@ -49,11 +32,8 @@ int main() {
     for (int i = 0; i < len; i++)
         token_print(&tokens[i]);
 
-    // return 0;
-    // const struct Value* v = parse(tokens, stack2, &len);
-    // struct Value obj = {.type = VAL_OBJ, .len = len, .p = v};
-    struct Value obj = {};
-    struct Token* end = parse_root(tokens, &obj);
+    Value obj = {};
+    Token* end = parse(tokens, &obj);
     int parsed = end - tokens;
 
     if (parsed != len) {
@@ -64,7 +44,7 @@ int main() {
     char* ser = malloc(20000);
     int size = serialize(obj, ser);
     fwrite(ser, 1, size, stdout);
-    // file_write("foo_out.jo", ser, size);
+    printf("\n");
 
     return 0;
 }
