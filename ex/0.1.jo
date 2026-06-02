@@ -1,0 +1,10 @@
+age 10
+pi 3.14
+msg 'hi there'
+point {x -1, y 1}
+cards {1, 2, 3, 'jack', 'ace'}
+inventory {
+    {type 'sword', count 2}
+    {type 'shield', count 1}
+}
+//comment
