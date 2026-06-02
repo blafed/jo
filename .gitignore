@@ -4,3 +4,4 @@ Makefile
 vis/display.js
 .clangd
 trash
+.clang-format

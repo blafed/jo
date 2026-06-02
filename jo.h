@@ -4,9 +4,9 @@ void* jo_new(unsigned long size);                           // heap alloc
 void jo_del(void* ptr);                                     // heap free
 void* jo_exp(void* ptr, unsigned long size);                // heap expand/realloc
 void jo_cpy(void* dst, const void* src, unsigned long len); // mem cpy
-void jo_echo(const char* s, size_t len);
+void jo_echo(const char* s, size_t len);                    //print
 
-size_t jo_fmt(char* buf, const char* fmt, ...);
+size_t jo_fmt(char* buf, const char* fmt, ...); //sprintf
 
 // int jo_parse_uint(unsigned long* out, const char* s, int n, int base);
 int jo_stry_uint(unsigned long i, char* buf, int base);
@@ -14,6 +14,7 @@ int jo_stry_float(double f, char* buf);
 
 enum TokenType {
     TOK_NONE,
+
     TOK_ID,
     TOK_NUM,
     TOK_SYM,
@@ -80,7 +81,7 @@ int serialize(Value value, char* out);
 const struct Value* parse(struct Token* list, int* stack, int* out_len);
 
 enum {
-    SYM_SLASH_SLASH = 128,
+    TOK_SLASH_SLASH = 128,
 };
 
 const char* tokentype_name(enum TokenType type);
@@ -97,7 +98,7 @@ static unsigned char sym_type(const char* seq, int len) {
     switch (seq[0]) {
         case '/':
             if (len == 2 && seq[1] == '/')
-                return SYM_SLASH_SLASH;
+                return TOK_SLASH_SLASH;
     }
     return seq[0];
 }
@@ -234,7 +235,7 @@ struct Token* organize(struct Token* list, struct Token* stack[]) {
                     else if(in_fragy) frag
                     else become(TOK_DOT)
                     break;
-                case SYM_SLASH_SLASH:
+                case TOK_SLASH_SLASH:
                     if(in_atom) term
                     else if(in_fragy) frag
                     else push(TOK_COMMENT)
@@ -251,10 +252,13 @@ struct Token* organize(struct Token* list, struct Token* stack[]) {
                         else become(TOK_OP);
                         break;
                 default:
-                    err
+                    if(in_fragy) frag
+                    else err
             }
             break;
-            default: err break;
+            default:
+                if(in_fragy) frag
+                else err 
         }
 
         switch (todo) {
@@ -655,7 +659,7 @@ const char* tokentype_name(enum TokenType type) {
     }
 }
 
-void token_echo(struct Token* t) {
+void token_print(struct Token* t) {
     if (!t->type || t->type == TOK_EMPTY)
         return;
 
@@ -703,7 +707,17 @@ size_t jo_fmt(char* buf, const char* fmt, ...) {
 int jo_stry_uint(unsigned long i, char* buf, int base) {
     return sprintf(buf, base == 16 ? "%lX" : base == 8 ? "%lo" : "%lu", i);
 }
-int jo_stry_float(double f, char* buf) { return sprintf(buf, "%g", f); }
+int jo_stry_float(double f, char* buf) {
+    int n = sprintf(buf, "%g", f);
 
+    if (!strchr(buf, '.') && !strchr(buf, 'e') && !strchr(buf, 'E'))
+    {
+        buf[n++] = '.';
+        buf[n++] = '0';
+        buf[n] = '\0';
+    }
+
+    return n;
+}
 // clang-format on
 #endif

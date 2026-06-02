@@ -1,6 +1,7 @@
 age 10
-pi 3.14
-msg 'hi there'
+pi 3.0
+stuff 0.3
+msg 'hi there @!#@%!^^&#*%$%$'
 point {x -1, y 1}
 cards {1, 2, 3, 'jack', 'ace'}
 inventory {

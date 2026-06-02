@@ -1,0 +1,6 @@
+//v0.2 true, false, nil
+
+dark true
+light false
+stuff nil
+sci 1e10
