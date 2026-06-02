@@ -662,11 +662,16 @@ const char* tokentype_name(enum TokenType type) {
         case TOK_FRAG:    return "FRAG";
         case TOK_TERM:    return "TERM";
         case TOK_DOT:     return "DOT";
+        case TOK_OP:      return "OP";
         default:          return "WTF";
     }
 }
 
 void token_print(const Token* t) {
+#define COL_RESET  "\x1b[0m"
+#define COL_GREEN  "\x1b[32m"
+#define COL_PURPLE "\x1b[45m"
+
     if (!t->type || t->type == TOK_EMPTY)
         return;
 
@@ -677,18 +682,21 @@ void token_print(const Token* t) {
     for (int i = 0; i < t->depth; i++)
         p += jo_fmt(buf + p, "| ");
 
-    p += jo_fmt(buf + p, "%-3s @%d:%d", name, t->line, t->col);
+    p += jo_fmt(buf + p, COL_PURPLE "%-3s" COL_RESET " @%d:%d ", name, t->line + 1, t->col + 9);
 
-    if (t->type == TOK_SYM && t->data)
-        p += jo_fmt(buf + p, " (%i)", t->data);
+    p += jo_fmt(buf + p, COL_GREEN);
 
-    p += jo_fmt(buf + p, "\"");
-    if ((t->type == TOK_TERM && t->data == '\n'))
+    if (((t->type == TOK_TERM || t->type == TOK_SEP) && t->data == '\n'))
         p += jo_fmt(buf + p, "n");
     else
         p += jo_fmt(buf + p, "%.*s", t->len, t->val);
-    p += jo_fmt(buf + p, "\"\n");
+    p += jo_fmt(buf + p, COL_RESET);
     jo_echo(buf, p);
+    jo_echo("\n", 1);
+
+#undef COL_RESET
+#undef COL_GREEN
+#undef COL_PURPLE
 }
 
 #endif
