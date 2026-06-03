@@ -84,12 +84,6 @@ void token_print(const Token* t);
 #endif
 
 #ifdef JO_USE_IMPL
-typedef struct Cursor Cursor;
-
-struct Cursor {
-    int pos;
-    int line, col;
-};
 
 unsigned char token_type(const char* s) {
     unsigned char c = s[0];
@@ -112,7 +106,6 @@ unsigned char token_type(const char* s) {
             return c;
     }
 
-    if (c >= 128 || c < 32) return 0;
     return c;
 }
 
@@ -357,7 +350,7 @@ static inline int digit_val(char c) {
     return -1;
 }
 
-int parse_uint(unsigned long* out, const char* s, size_t n, int base) {
+int str_to_uint(unsigned long* out, const char* s, size_t n, int base) {
     unsigned long v = 0;
     size_t i = 0;
     for (; i < n; i++) {
@@ -374,9 +367,9 @@ int parse_uint(unsigned long* out, const char* s, size_t n, int base) {
     return i;
 }
 
-int parse_fracture(double* out, const char* s, size_t n) {
+int str_to_fraction(double* out, const char* s, size_t n) {
     unsigned long f;
-    int dec = parse_uint(&f, s, n, 10);
+    int dec = str_to_uint(&f, s, n, 10);
     long x = 1;
     for (int d = 0; d < dec; d++)
         x *= 10;
@@ -389,7 +382,7 @@ static inline Token* skip_empty(Token* tok) {
     return tok;
 }
 
-static inline Token* get_next(Token* tok) {
+static inline Token* next(Token* tok) {
     tok++;
     return skip_empty(tok);
 }
@@ -399,25 +392,19 @@ static inline Token* skip_term(Token* tok) {
     return tok;
 }
 
-static inline Token* get_prev(Token* tok) {
-    tok--;
-    while (tok->type == TOK_EMPTY) tok--;
-    return tok;
-}
-
 Token* parse_dec(Token* start, Value* out) {
     Token* t = start;
     if (t->type != TOK_DOT)
         return start;
-    t = get_next(t);
+    t = next(t);
     if (t->type != TOK_NUM)
         return start;
 
     double f;
-    if (parse_fracture(&f, t->val, t->len) != t->len)
+    if (str_to_fraction(&f, t->val, t->len) != t->len)
         return start;
 
-    t = get_next(t);
+    t = next(t);
 
     out->f += f;
     out->type = VAL_FLOAT;
@@ -427,27 +414,29 @@ Token* parse_dec(Token* start, Value* out) {
 Token* parse_int(Token* start, Value* out) {
     Token* t = start;
     unsigned long l = 0;
-    if (parse_uint(&l, t->val, t->len, 10) == t->len) {
+    if (str_to_uint(&l, t->val, t->len, 10) == t->len) {
         *out = (Value){.i = l, .type = VAL_INT};
-        t = get_next(t);
+        t = next(t);
     }
     return t;
 }
 
 Token* parse_num(Token* start, Value* out) {
     Token* t = start;
+
     int sign = 1;
     if (t->type == '-') {
         sign = -1;
-        t = get_next(t);
+        t = next(t);
     } else if (t->type == '+')
-        t = get_next(t);
+        t = next(t);
+
     t = parse_int(t, out);
     if (t->type == TOK_DOT) {
         unsigned long l = out->i;
         out->f = l;
         Token* n = parse_dec(t, out);
-        if (n == t)
+        if (n == t) //check success
             out->i = l;
         else
             t = n;
@@ -463,7 +452,7 @@ Token* parse_id(Token* start, Value* out) {
     Token* t = start;
     if (t->type == TOK_ID) {
         *out = (Value){.type = VAL_ID, .s = str_alloc(start->val, start->len), .len = start->len};
-        t = get_next(t);
+        t = next(t);
     }
     return t;
 }
@@ -476,8 +465,8 @@ Token* parse_str(Token* start, Value* out) {
     *out = (Value){.type = VAL_STR, .s = jo_exp(NULL, 1), .len = 0};
     out->s[out->len] = 0;
 
-    t = get_next(t);
-    for (; t->type == TOK_FRAG && start->depth + 1 == t->depth; t = get_next(t)) {
+    t = next(t);
+    for (; t->type == TOK_FRAG && start->depth + 1 == t->depth; t = next(t)) {
         out->s = jo_exp((char*)out->s, out->len + t->len + 1);
         jo_cpy(out->s + out->len, t->val, t->len);
         out->len += t->len;
@@ -504,14 +493,16 @@ Token* parse_kv(Token* start, Value* k, Value* v) {
 Token* parse_arr(Token* start, Value* out) {
     Token* t = start;
     int cap = out->len;
+
     if (t->type == TOK_TERM)
         t = skip_term(t);
+
     for (;;) {
         t = skip_empty(t);
 
         Value el = {};
         Token* n = parse_any(t, &el);
-        if (n == t || n == NULL)
+        if (n == t || n == NULL) //check valid
             break;
         else
             t = n;
@@ -522,10 +513,6 @@ Token* parse_arr(Token* start, Value* out) {
         }
         out->p[out->len] = el;
         out->len++;
-
-        // t = skip_empty(t);
-        // printf("%i %i", t->depth, start->depth);
-        // print_token(t);
 
         if (t->type == TOK_TERM && t->depth == start->depth)
             t = skip_term(t);
@@ -541,12 +528,13 @@ Token* parse_arr_kv(Token* start, Value* out) {
 
     if (t->type == TOK_TERM)
         t = skip_term(t);
+
     for (;;) {
         t = skip_empty(t);
 
         Value k = {}, v = {};
         Token* n = parse_kv(t, &k, &v);
-        if (t == n || n == NULL)
+        if (t == n || n == NULL) //check success
             break;
         else
             t = n;
@@ -572,7 +560,7 @@ Token* parse_arr_kv(Token* start, Value* out) {
 
 int is_kv(Token* tok) {
     if (tok->type == TOK_ID) {
-        Token* t = get_next(tok);
+        Token* t = next(tok);
         if (t->type != TOK_TERM && t->type != TOK_NONE && t->depth == tok->depth)
             return 1;
     }
@@ -596,7 +584,7 @@ Token* parse(Token* start, Value* out) {
 Token* parse_group(Token* start, Value* out) {
     Token* t = start;
     if (t->type == TOK_GROUP) {
-        t = get_next(t);
+        t = next(t);
         t = parse(t, out);
     }
     return t;
