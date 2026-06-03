@@ -184,13 +184,6 @@ Token* organize(Token* list, Token* stack[]) {
 #define err todo = ERROR;
 #define become(x) {todo = BECOME; payload = x;}
 
-
-#define in_atom cur->type == TOK_ID || cur->type == TOK_NUM
-#define in_group cur->type == TOK_GROUP
-#define in_string cur->type == TOK_STRING
-#define in_comment cur->type == TOK_COMMENT_LINE || cur->type == TOK_COMMENT_BLOCK
-#define in_fragy (in_string || in_comment)
-
     Token* cur;
     int sp = 0;
 
@@ -204,81 +197,50 @@ Token* organize(Token* list, Token* stack[]) {
         todo = 0;
         cur = stack[sp];
         t->depth = cur->depth + 1;
+        
+        unsigned char type = t->type;
 
-        switch ((unsigned char)t->type) {
-            case TOK_EMPTY:
-                if(in_fragy) frag
-                else if(in_atom) term
+        switch (cur->type) {
+            case TOK_STRING:
+                switch (type) {
+                    case '\'': pop break;
+                    default: frag break;
+                }
+                break;
+            case TOK_COMMENT_BLOCK:
+                if(type == TOK_STAR_SLASH) pop
                 else remove
                 break;
-            case TOK_NEWLINE:
-                if(cur->type == TOK_COMMENT_LINE) pop
-                else if(in_fragy) frag
-                else if(in_atom) term
-                else become(TOK_TERM)  
+            case TOK_COMMENT_LINE:
+                if(type == TOK_NEWLINE) pop
+                else remove
                 break;
-            case TOK_ID:
+
             case TOK_NUM:
-                if(in_fragy) frag
-                else if(in_atom) append
-                else push(t->type);
+            case TOK_ID:
+                if(type == TOK_NUM || type == TOK_ID) append
+                else term
                 break;
-            case '{':
-                if(in_atom) term
-                else if(in_fragy) frag
-                else push(TOK_GROUP)
-                break;
-            case '}':
-                if(in_group) pop
-                else if(in_atom) term
-                else if(in_fragy) frag
-                else err
-                break;
-            case '\'':
-                if(in_atom) term
-                else if(in_string) pop
-                else if(in_fragy) frag
-                else push(TOK_STRING)
-                break;
-            case '_':
-                if(in_atom) append
-                else if(in_fragy) frag
-                else push(TOK_ID)
-                break;
-            case '.':
-                if(in_atom) term
-                else if(in_fragy) frag
-                else become(TOK_DOT)
-                break;
-            case TOK_SLASH_SLASH:
-                if(in_atom) term
-                else if(in_fragy) frag
-                else push(TOK_COMMENT_LINE)
-                break;
-            case TOK_SLASH_STAR:
-                if(in_atom) term
-                else if(in_fragy) frag
-                else push(TOK_COMMENT_BLOCK)
-                break;
-            case TOK_STAR_SLASH:
-                if(cur->type == TOK_COMMENT_BLOCK) pop
-                else if(in_atom) term
-                else if(in_fragy) frag
-                else err
-                break;
-            case ',':
-                if(in_atom) term
-                else if(in_fragy) frag
-                else become(TOK_TERM)
-                break;
-            case '-':
-            case '+':
-                if(in_atom) term
-                else if(in_fragy) frag
-                break;
+                
             default:
-                if(in_fragy) frag
-                else err
+                switch (type) {
+                    case '{': push(TOK_GROUP); break;
+                    case '}': if(cur->type == TOK_GROUP) pop else err; break;
+                    case ',': become(TOK_TERM); break;
+                    case '.': become(TOK_DOT); break;
+                    case '\'': push(TOK_STRING); break;
+                    case TOK_NEWLINE: become(TOK_TERM); break;
+                    case TOK_STRING: push(TOK_STRING); break;
+                    case TOK_SLASH_SLASH: push(TOK_COMMENT_LINE); break;
+                    case TOK_SLASH_STAR: push(TOK_COMMENT_BLOCK); break;
+                    case TOK_EMPTY: remove break;
+                    case TOK_NUM:
+                    case TOK_ID: push(type); break;
+                    case '+': 
+                    case '-': break;
+                    default: err
+                }
+                break;
         }
 
         switch (todo) {
@@ -287,28 +249,18 @@ Token* organize(Token* list, Token* stack[]) {
             case PUSH: t->type = payload; stack[++sp] = t;  break;
             case POP: t->type = TOK_EMPTY; sp--; break;
             case REMOVE: t->type = TOK_EMPTY; break;
-            case FRAG:
-                // if((t-1)->type == TOK_FRAG) {(t-1)->len += t->len; t->type = TOK_EMPTY;}
-                if(in_comment) t->type = TOK_EMPTY; 
-                else t->type = TOK_FRAG;
-                break;
+            case FRAG: t->type = TOK_FRAG; break;
             case BECOME: t->type = payload; break;
             case ERROR: return  t;
         }
     }
 
-    Token* c = NULL;
-    for(Token* t = list; t->type; t++) {
-        if(t->type == TOK_COMMENT_LINE || t->type == TOK_COMMENT_BLOCK) t->type = TOK_EMPTY;
-        if(t->type == TOK_TERM) {
-            if(c && c->depth == t->depth) t->type = TOK_EMPTY;
-            else c = t;
-        }
-        else c = NULL;
-    }
-
     // clang-format on
 
+    //remove comments and flatten consecutive terminators eg. (,,,,)
+
+    for (Token* t = list; t->type; t++)
+        if (t->type == TOK_COMMENT_LINE || t->type == TOK_COMMENT_BLOCK) t->type = TOK_EMPTY;
 #undef append
 #undef term
 #undef push
@@ -317,11 +269,6 @@ Token* organize(Token* list, Token* stack[]) {
 #undef frag
 #undef err
 #undef become
-#undef in_atom
-#undef in_group
-#undef in_string
-#undef in_comment
-#undef in_fragy
 
     return NULL;
 }
@@ -447,6 +394,11 @@ static inline Token* get_next(Token* tok) {
     return skip_empty(tok);
 }
 
+static inline Token* skip_term(Token* tok) {
+    while (tok->type == TOK_TERM || tok->type == TOK_EMPTY) tok++;
+    return tok;
+}
+
 static inline Token* get_prev(Token* tok) {
     tok--;
     while (tok->type == TOK_EMPTY) tok--;
@@ -488,7 +440,8 @@ Token* parse_num(Token* start, Value* out) {
     if (t->type == '-') {
         sign = -1;
         t = get_next(t);
-    }
+    } else if (t->type == '+')
+        t = get_next(t);
     t = parse_int(t, out);
     if (t->type == TOK_DOT) {
         unsigned long l = out->i;
@@ -552,7 +505,7 @@ Token* parse_arr(Token* start, Value* out) {
     Token* t = start;
     int cap = out->len;
     if (t->type == TOK_TERM)
-        t = get_next(t);
+        t = skip_term(t);
     for (;;) {
         t = skip_empty(t);
 
@@ -575,7 +528,7 @@ Token* parse_arr(Token* start, Value* out) {
         // print_token(t);
 
         if (t->type == TOK_TERM && t->depth == start->depth)
-            t = get_next(t);
+            t = skip_term(t);
         else
             break;
     }
@@ -587,7 +540,7 @@ Token* parse_arr_kv(Token* start, Value* out) {
     int cap = out->len;
 
     if (t->type == TOK_TERM)
-        t = get_next(t);
+        t = skip_term(t);
     for (;;) {
         t = skip_empty(t);
 
@@ -610,7 +563,7 @@ Token* parse_arr_kv(Token* start, Value* out) {
         t = skip_empty(t);
 
         if (t->type == TOK_TERM && t->depth == start->depth)
-            t = get_next(t);
+            t = skip_term(t);
         else
             break;
     }
@@ -667,7 +620,7 @@ const char* tokentype_name(enum TokenType type) {
         case TOK_NONE:          return "NONE";
         case TOK_ID:            return "ID";
         case TOK_NUM:           return "NUM";
-        case TOK_EMPTY:         return "EMPTY";
+        case TOK_EMPTY:         return "   ";
         case TOK_GROUP:         return "GROUP";
         case TOK_STRING:        return "STRING";
         case TOK_COMMENT_LINE:  return "COMMENT";
@@ -701,8 +654,8 @@ void token_print(const Token* t) {
 
     p += jo_fmt(buf + p, COL_GREEN);
 
-    if (t->type == TOK_NEWLINE || t->type == TOK_TERM && t->val[0] == '\n')
-        p += jo_fmt(buf + p, "n");
+    if (t->val[0] == '\n')
+        p += jo_fmt(buf + p, "\\n");
     else
         p += jo_fmt(buf + p, "%.*s", t->len, t->val);
     p += jo_fmt(buf + p, COL_RESET);

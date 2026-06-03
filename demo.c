@@ -27,10 +27,16 @@ int main() {
     static Token* stack[256];
 
     int len = tokenize(src, tokens);
-    organize(tokens, stack);
+    Token* err = organize(tokens, stack);
 
     for (int i = 0; i < len; i++)
         token_print(&tokens[i]);
+
+    if (err) {
+        printf("unexpected token: ");
+        token_print(err);
+        return 0;
+    }
 
     Value obj = {};
     Token* end = parse(tokens, &obj);
