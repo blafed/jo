@@ -9,3 +9,4 @@ inventory {
     {type 'shield', count 1}
 }
 //comment
+/*comment block */
