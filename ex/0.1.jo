@@ -1,6 +1,5 @@
 age 10
 pi 3.14
-stuff 0.3
 msg 'hi there'
 point {x -1, y 1}
 cards {1, 2, 3, 'jack', 'ace'}
