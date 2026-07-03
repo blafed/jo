@@ -27,6 +27,9 @@ int main() {
     static Token* stack[256];
 
     int len = tokenize(src, tokens);
+    for (int i = 0; i < len; i++)
+        token_print(&tokens[i]);
+
     Token* err = organize(tokens, stack);
 
     for (int i = 0; i < len; i++)
@@ -53,4 +56,17 @@ int main() {
     printf("\n");
 
     return 0;
+}
+
+Value jo(const char* src) {
+    static Token tokens[10000];
+    static Token* stack[256];
+
+    Value val;
+
+    tokenize(src, tokens);
+    organize(tokens, stack);
+    parse(tokens, &val);
+
+    return val;
 }

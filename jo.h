@@ -28,12 +28,11 @@ enum TokenType {
     TOK_NUM = '0',
     TOK_NEWLINE = '\n',
 
-    //computed at second pass
-
     TOK_EMPTY = ' ',
     TOK_DOT = '.',
     TOK_TERM = ',',
 
+    //double character symbols
     TOK_SLASH_SLASH = 128,
     TOK_SLASH_STAR,
     TOK_STAR_SLASH,
@@ -98,12 +97,12 @@ unsigned char token_type(const char* s) {
                 case '/': return TOK_SLASH_SLASH;
                 case '*': return TOK_SLASH_STAR;
             }
-            return c;
+            break;
         case '*':
             switch (s[1]) {
                 case '/': return TOK_STAR_SLASH;
             }
-            return c;
+            break;
     }
 
     return c;
@@ -250,10 +249,11 @@ Token* organize(Token* list, Token* stack[]) {
 
     // clang-format on
 
-    //remove comments and flatten consecutive terminators eg. (,,,,)
-
+    //remove comments
     for (Token* t = list; t->type; t++)
-        if (t->type == TOK_COMMENT_LINE || t->type == TOK_COMMENT_BLOCK) t->type = TOK_EMPTY;
+        if (t->type == TOK_COMMENT_LINE || t->type == TOK_COMMENT_BLOCK)
+            t->type = TOK_EMPTY;
+
 #undef append
 #undef term
 #undef push
@@ -279,7 +279,6 @@ char* str_alloc(const char* from, int len) {
 }
 
 int serialize(Value v, char* out) {
-    //TODO optimize sprintfs
     char* start = out;
     switch (v.type) {
         case VAL_INT: {
@@ -382,14 +381,14 @@ static inline Token* skip_empty(Token* tok) {
     return tok;
 }
 
-static inline Token* next(Token* tok) {
-    tok++;
-    return skip_empty(tok);
-}
-
 static inline Token* skip_term(Token* tok) {
     while (tok->type == TOK_TERM || tok->type == TOK_EMPTY) tok++;
     return tok;
+}
+
+static inline Token* next(Token* tok) {
+    tok++;
+    return skip_empty(tok);
 }
 
 Token* parse_dec(Token* start, Value* out) {
