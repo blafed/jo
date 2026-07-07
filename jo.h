@@ -27,6 +27,7 @@ enum TokenType : unsigned char {
 
     TOK_ID = 'A',
     TOK_NUM = '0',
+    TOK_EXPONENT = 'e',
     TOK_NEWLINE = '\n',
 
     TOK_EMPTY = ' ',
@@ -283,8 +284,9 @@ Token* organize(Token* list, Token* stack[]) {
         PUSH,
         POP, //terminate current and advance
         REMOVE,
-        FRAG, //turn this into a frag!
-        BECOME,
+        FRAG,   //turn this into a frag!
+        BECOME, //change type of this
+        INSERT, //terminate current and change type of this
         ERROR,
     };
 
@@ -297,6 +299,7 @@ Token* organize(Token* list, Token* stack[]) {
 #define frag todo = FRAG;
 #define err todo = ERROR;
 #define become(x) {todo = BECOME; payload = x;}
+#define insert(x) {todo = INSERT; payload = x;}
 
     Token* cur;
     int sp = 0;
@@ -332,8 +335,22 @@ Token* organize(Token* list, Token* stack[]) {
                 break;
 
             case TOK_NUM:
+                if(type == TOK_ID) {
+                    if(t->val[0] == 'e' || t->val[0] == 'E') insert(TOK_EXPONENT)
+                    else append
+                }
+                else if(type == '_') append
+                else if(type == TOK_NUM) append
+                else term
+                break;
             case TOK_ID:
                 if(type == TOK_NUM || type == TOK_ID) append
+                else if(type == '_') append
+                else term
+                break;
+            case TOK_EXPONENT:
+                if(type == '-' || type == '+') append
+                else if(type == TOK_NUM) append
                 else term
                 break;
                 
@@ -353,6 +370,7 @@ Token* organize(Token* list, Token* stack[]) {
                     case TOK_ID: push(type); break;
                     case '+': 
                     case '-': break;
+                    case '_':  become(TOK_ID) break;
                     default: err
                 }
                 break;
@@ -366,6 +384,7 @@ Token* organize(Token* list, Token* stack[]) {
             case REMOVE: t->type = TOK_EMPTY; break;
             case FRAG: t->type = TOK_FRAG; break;
             case BECOME: t->type = payload; break;
+            case INSERT: t->type = payload; t->depth--; stack[sp] = t; break;
             case ERROR: return  t;
         }
     }
@@ -493,6 +512,24 @@ int str_to_uint(unsigned long* out, const char* s, size_t n, int base) {
     return i;
 }
 
+int str_to_int(long* out, const char* s, size_t n, int base) {
+    int sign = 1;
+    int diff = 0;
+    if (s[0] == '+') {
+        s++;
+        diff = 1;
+    } else if (s[0] == '-') {
+        s++;
+        sign = -1;
+        diff = 1;
+    }
+
+    unsigned long v;
+    int dec = str_to_uint(&v, s, n - diff, base);
+    *out = v * sign;
+    return dec + diff;
+}
+
 int str_to_fraction(double* out, const char* s, size_t n) {
     unsigned long f;
     int dec = str_to_uint(&f, s, n, 10);
@@ -518,6 +555,22 @@ static inline Token* next(Token* tok) {
     return skip_empty(tok);
 }
 
+Token* parse_expo(Token* start, Value* out) {
+    Token* t = start;
+    if (t->type != TOK_EXPONENT)
+        return start;
+
+    long val;
+    if (str_to_int(&val, t->val + 1, t->len - 1, 10) != t->len - 1)
+        return start;
+    for (int i = 0; i < val; i++) out->f *= 10;
+    for (int i = val; i < 0; i++) out->f /= 10;
+
+    out->type = VAL_FLOAT;
+    t = next(t);
+    return t;
+}
+
 Token* parse_dec(Token* start, Value* out) {
     Token* t = start;
     if (t->type != TOK_DOT)
@@ -531,9 +584,12 @@ Token* parse_dec(Token* start, Value* out) {
         return start;
 
     t = next(t);
-
     out->f += f;
     out->type = VAL_FLOAT;
+
+    if (t->type == TOK_EXPONENT)
+        t = parse_expo(t, out);
+
     return t;
 }
 
@@ -562,6 +618,14 @@ Token* parse_num(Token* start, Value* out) {
         unsigned long l = out->i;
         out->f = l;
         Token* n = parse_dec(t, out);
+        if (n == t) //check success
+            out->i = l;
+        else
+            t = n;
+    } else if (t->type == TOK_EXPONENT) {
+        unsigned long l = out->i;
+        out->f = l;
+        Token* n = parse_expo(t, out);
         if (n == t) //check success
             out->i = l;
         else
@@ -718,17 +782,18 @@ Token* parse_group(Token* start, Value* out) {
 
 Token* parse_any(Token* tok, Value* out) {
     switch ((unsigned char)tok->type) {
-        case TOK_NIL:    *out = VALUE_NIL; return tok + 1;
+        case TOK_NIL:      *out = VALUE_NIL; return tok + 1;
         case TOK_FALSE:
-        case TOK_TRUE:   *out = (Value){.type = VAL_BOOL, .i = tok->type - TOK_FALSE}; return tok + 1;
+        case TOK_TRUE:     *out = (Value){.type = VAL_BOOL, .i = tok->type - TOK_FALSE}; return tok + 1;
         case TOK_NUM:
         case '+':
-        case '-':        return parse_num(tok, out);
-        case TOK_DOT:    return parse_dec(tok, out);
-        case TOK_ID:     return parse_id(tok, out);
-        case TOK_STRING: return parse_str(tok, out);
-        case TOK_GROUP:  return parse_group(tok, out);
-        default:         return NULL;
+        case '-':          return parse_num(tok, out);
+        case TOK_DOT:      return parse_dec(tok, out);
+        case TOK_EXPONENT: return parse_expo(tok, out);
+        case TOK_ID:       return parse_id(tok, out);
+        case TOK_STRING:   return parse_str(tok, out);
+        case TOK_GROUP:    return parse_group(tok, out);
+        default:           return NULL;
     }
 }
 
@@ -746,6 +811,7 @@ const char* tokentype_name(enum TokenType type) {
         case TOK_TERM:          return "TERM";
         case TOK_DOT:           return "DOT";
         case TOK_NEWLINE:       return "NL";
+        case TOK_EXPONENT:      return "EXPO";
         case '-':
         case '+':               return "UNARY";
         default:                return "OTHER";

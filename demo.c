@@ -37,19 +37,18 @@ void test_api() {
 }
 
 int main() {
-    test_api();
-    return 0;
+    // test_api();
+    // return 0;
     char* src;
-    size_t fsize = file("ex/0.1.jo", &src);
+    size_t fsize = file("ex/0.2.jo", &src);
 
     static Token tokens[1000];
     static Token* stack[256];
 
     int len = tokenize(src, tokens);
+    Token* err = organize(tokens, stack);
     for (int i = 0; i < len; i++)
         token_print(&tokens[i]);
-
-    Token* err = organize(tokens, stack);
 
     for (int i = 0; i < len; i++)
         token_print(&tokens[i]);

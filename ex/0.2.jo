@@ -3,4 +3,5 @@
 dark true
 light false
 stuff nil
-somenum 1e10
+num1 1.5e99
+num2 1e-12
