@@ -9,13 +9,14 @@ void jo_del(void* ptr);                                     // heap free
 void* jo_exp(void* ptr, unsigned long size);                // heap expand/realloc
 void jo_cpy(void* dst, const void* src, unsigned long len); // mem cpy
 void jo_echo(const char* s, size_t len);                    //print
+int jo_cmp(const void* a, const void* b, size_t len);       //memcmp
 
 size_t jo_fmt(char* buf, const char* fmt, ...); //sprintf
 
 int jo_stry_uint(unsigned long i, char* buf, int base);
 int jo_stry_float(double f, char* buf);
 
-enum TokenType {
+enum TokenType : unsigned char {
     TOK_NONE = 0,
 
     TOK_FRAG = 1, //a piece inside comment or string
@@ -36,12 +37,18 @@ enum TokenType {
     TOK_SLASH_SLASH = 128,
     TOK_SLASH_STAR,
     TOK_STAR_SLASH,
+
+    //keywords
+    TOK_NIL = 192,
+    TOK_FALSE,
+    TOK_TRUE,
 };
 
 enum ValueType {
     VAL_NONE,
 
     VAL_INT,
+    VAL_BOOL,
     VAL_FLOAT,
 
     VAL_STR,
@@ -82,6 +89,97 @@ const char* tokentype_name(enum TokenType type);
 void token_print(const Token* t);
 #endif
 
+const Value VALUE_NIL = {};
+const Value VALUE_FALSE = {.type = VAL_BOOL, .i = 0};
+const Value VALUE_TRUE = {.type = VAL_BOOL, .i = 1};
+
+int value_cmp(Value a, Value b);
+
+int slice_cmp(Value a, Value b, int start, int len) {
+    int stepA = a.type - VAL_ARR + 1;
+    int stepB = b.type - VAL_ARR + 1;
+
+    if (a.len < start + len || b.len < start + len)
+        return -1;
+
+    int end = start + len;
+
+    while (start != end) {
+        if (value_cmp(a.p[start * stepA], b.p[start * stepB]))
+            return 1;
+
+        start++;
+    }
+
+    return 0;
+}
+
+int value_cmp(Value a, Value b) {
+    switch (a.type) {
+        case VAL_NONE:
+            switch (b.type) {
+                case VAL_NONE: return 0;
+                default:       return 1;
+            }
+
+        case VAL_BOOL:
+        case VAL_INT:
+            switch (b.type) {
+                case VAL_BOOL:
+                case VAL_INT:   return a.i != b.i;
+                case VAL_FLOAT: return a.i != b.f;
+                default:        return 1;
+            }
+        case VAL_FLOAT:
+            switch (b.type) {
+                case VAL_BOOL:
+                case VAL_INT:   return a.f != b.i;
+                case VAL_FLOAT: return a.f != b.f;
+                default:        return 1;
+            }
+        case VAL_ARR:
+        case VAL_OBJ:
+            switch (b.type) {
+                case VAL_ARR:
+                case VAL_OBJ:
+                    return a.len != b.len || slice_cmp(a, b, 0, a.len);
+                default: return 1;
+            }
+        case VAL_STR:
+        case VAL_ID:
+            switch (b.type) {
+                case VAL_STR:
+                case VAL_ID:
+                    return a.len == b.len && jo_cmp(a.s, b.s, a.len) != 0;
+                default: return 1;
+            }
+
+        default:
+            return a.type == b.type && a.i == b.i;
+    }
+}
+
+Value value_obj() {
+    return (Value){.type = VAL_OBJ};
+}
+
+Value value_get_index(Value v, int i) {
+    switch (v.type) {
+        case VAL_OBJ: return v.p[i * 2 + 1];
+        case VAL_ARR: return v.p[i];
+        default:      return VALUE_NIL;
+    }
+}
+
+Value value_get_key(Value v, const char* key) {
+    if (v.type == VAL_OBJ)
+        for (int i = 0; i < v.len; i += 2) {
+            if (!jo_cmp(v.p[i].s, key, v.p[i].len))
+                return v.p[i + 1];
+        }
+    return VALUE_NIL;
+}
+
 #ifdef JO_USE_IMPL
 
 unsigned char token_type(const char* s) {
@@ -115,6 +213,30 @@ void advance_cursor(const char* src, int* pos, int* line, int* col) {
         *col = 0;
     }
     *pos = *pos + 1;
+}
+
+enum TokenType keyword(const char* s, int len) {
+    switch (s[0]) {
+        case 'n':
+            if (!jo_cmp(s, "nil", 3)) return TOK_NIL;
+            break;
+        case 'f':
+            if (!jo_cmp(s, "false", 5)) return TOK_FALSE;
+            break;
+        case 't':
+            if (!jo_cmp(s, "true", 4)) return TOK_TRUE;
+            break;
+    }
+    return TOK_ID;
+}
+
+int keyword_str(enum TokenType type, char* out) {
+    switch (type) {
+        case TOK_NIL:   jo_cpy(out, "nil", 3); return 3;
+        case TOK_TRUE:  jo_cpy(out, "true", 4); return 4;
+        case TOK_FALSE: jo_cpy(out, "false", 5); return 5;
+        default:        return 0;
+    }
 }
 
 int tokenize(const char* src, Token* list) {
@@ -183,6 +305,7 @@ Token* organize(Token* list, Token* stack[]) {
     int payload = 0;
 
     static Token IDLE = {};
+    IDLE.type = 0;
     stack[sp] = &IDLE;
 
     for (Token* t = list; t->type ; t++) {
@@ -249,10 +372,14 @@ Token* organize(Token* list, Token* stack[]) {
 
     // clang-format on
 
-    //remove comments
-    for (Token* t = list; t->type; t++)
+    for (Token* t = list; t->type; t++) {
+        //remove comments
         if (t->type == TOK_COMMENT_LINE || t->type == TOK_COMMENT_BLOCK)
             t->type = TOK_EMPTY;
+        //find keywords
+        if (t->type == TOK_ID)
+            t->type = keyword(t->val, t->len);
+    }
 
 #undef append
 #undef term
@@ -336,8 +463,8 @@ int serialize(Value v, char* out) {
             *out = '}';
             out++;
             break;
-        case VAL_NONE:
-            break;
+        case VAL_NONE: out += keyword_str(TOK_NIL, out); break;
+        case VAL_BOOL: out += keyword_str(v.i + TOK_FALSE, out); break;
     }
     return out - start;
 }
@@ -591,6 +718,9 @@ Token* parse_group(Token* start, Value* out) {
 
 Token* parse_any(Token* tok, Value* out) {
     switch ((unsigned char)tok->type) {
+        case TOK_NIL:    *out = VALUE_NIL; return tok + 1;
+        case TOK_FALSE:
+        case TOK_TRUE:   *out = (Value){.type = VAL_BOOL, .i = tok->type - TOK_FALSE}; return tok + 1;
         case TOK_NUM:
         case '+':
         case '-':        return parse_num(tok, out);
@@ -665,6 +795,7 @@ void* jo_new(unsigned long size) { return malloc(size); }
 void jo_del(void* ptr) { free(ptr); }
 void* jo_exp(void* ptr, unsigned long size) { return realloc(ptr, size); }
 void jo_echo(const char* s, size_t len) { fwrite(s, 1, len, stdout); }
+int jo_cmp(const void* a, const void* b, size_t len) { return memcmp(a, b, len); }
 void jo_cpy(void* dst, const void* src, unsigned long len) { memcpy(dst, src, len); }
 size_t jo_fmt(char* buf, const char* fmt, ...) {
     va_list args;
