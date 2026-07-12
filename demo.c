@@ -22,7 +22,7 @@ size_t file(const char* path, char** out) {
 Value jo(const char* src);
 
 void test_api() {
-    Value obj = jo("{x 'hi there', y 1}");
+    Value obj = jo("{x 1,y 2,z 3}");
     Value val = value_key(obj, "y");
     Value another = value_obj();
 
@@ -31,8 +31,9 @@ void test_api() {
         printf("all equal\n");
 
     char ser[256];
-    int size = serialize(obj, ser);
+    int size = serialize_cr(obj, ser);
     fwrite(ser, 1, size, stdout);
+    printf("\n");
 }
 
 int main() {

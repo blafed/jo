@@ -413,6 +413,70 @@ int serialize(Value v, char* out) {
     return out - start;
 }
 
+int out_string(char* out, const char* str) {
+    int i = 0;
+    while (str[i]) {
+        *out = str[i];
+        out++;
+        i++;
+    }
+    return i;
+}
+
+int out_int(char* out, long l) {
+    int i = 0;
+    if (l < 0) {
+        out[i++] = '-';
+        l = -l;
+    }
+    i += jo_stry_uint((unsigned long)l, out + i, 10);
+    return i;
+}
+
+int serialize_cr(Value v, char* out) {
+    char* start = out;
+    switch (v.type) {
+        case VAL_INT: {
+            out += out_string(out, "(Value){.type=VAL_INT, .i=");
+            out += out_int(out, v.i);
+            out += out_string(out, "}");
+        } break;
+        case VAL_FLOAT:
+            out += out_string(out, "(Value){.type=VAL_FLOAT, .f=");
+            out += jo_stry_float(v.f, out);
+            out += out_string(out, "}");
+            break;
+        case VAL_STR:
+        case VAL_ID:
+            if (v.type == VAL_ID)
+                out += out_string(out, "(Value){.type=VAL_ID, .s=\"");
+            else
+                out += out_string(out, "(Value){.type=VAL_STR, .s=\"");
+            out += out_string(out, v.s);
+            out += out_string(out, "\", .len=");
+            out += out_int(out, v.len);
+            out += out_string(out, "}");
+            break;
+        case VAL_ARR:
+        case VAL_OBJ:
+            if (v.type == VAL_ARR)
+                out += out_string(out, "(Value){.type=VAL_ARR, .p=");
+            else
+                out += out_string(out, "(Value){.type=VAL_OBJ, .p=");
+            out += out_string(out, "(Value[]){");
+            for (int i = 0; i < v.len; i++) {
+                const Value* p = &v.p[i];
+                if (p != v.p) {
+                    out += out_string(out, ", ");
+                }
+                out += serialize_cr(*p, out);
+            }
+            out += out_string(out, "}");
+            out += out_string(out, "}");
+            break;
+    }
+    return out - start;
+}
 static inline int digit_val(char c) {
     if (c >= '0' && c <= '9') return c - '0';
     if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
