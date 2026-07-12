@@ -5,8 +5,3 @@ vis/display.js
 .clangd
 trash
 .clang-format
-
-
-# Added by cargo
-
-/target
