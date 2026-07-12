@@ -93,93 +93,18 @@ void token_print(const Token* t);
 const Value VALUE_NIL = {};
 const Value VALUE_FALSE = {.type = VAL_BOOL, .i = 0};
 const Value VALUE_TRUE = {.type = VAL_BOOL, .i = 1};
+const Value VALUE_ZERO = {.type = VAL_INT, .i = 0};
 
 int value_cmp(Value a, Value b);
-
-int slice_cmp(Value a, Value b, int start, int len) {
-    int stepA = a.type - VAL_ARR + 1;
-    int stepB = b.type - VAL_ARR + 1;
-
-    if (a.len < start + len || b.len < start + len)
-        return -1;
-
-    int end = start + len;
-
-    while (start != end) {
-        if (value_cmp(a.p[start * stepA], b.p[start * stepB]))
-            return 1;
-
-        start++;
-    }
-
-    return 0;
-}
-
-int value_cmp(Value a, Value b) {
-    switch (a.type) {
-        case VAL_NONE:
-            switch (b.type) {
-                case VAL_NONE: return 0;
-                default:       return 1;
-            }
-
-        case VAL_BOOL:
-        case VAL_INT:
-            switch (b.type) {
-                case VAL_BOOL:
-                case VAL_INT:   return a.i != b.i;
-                case VAL_FLOAT: return a.i != b.f;
-                default:        return 1;
-            }
-        case VAL_FLOAT:
-            switch (b.type) {
-                case VAL_BOOL:
-                case VAL_INT:   return a.f != b.i;
-                case VAL_FLOAT: return a.f != b.f;
-                default:        return 1;
-            }
-        case VAL_ARR:
-        case VAL_OBJ:
-            switch (b.type) {
-                case VAL_ARR:
-                case VAL_OBJ:
-                    return a.len != b.len || slice_cmp(a, b, 0, a.len);
-                default: return 1;
-            }
-        case VAL_STR:
-        case VAL_ID:
-            switch (b.type) {
-                case VAL_STR:
-                case VAL_ID:
-                    return a.len == b.len && jo_cmp(a.s, b.s, a.len) != 0;
-                default: return 1;
-            }
-
-        default:
-            return a.type == b.type && a.i == b.i;
-    }
-}
-
-Value value_obj() {
-    return (Value){.type = VAL_OBJ};
-}
-
-Value value_get_index(Value v, int i) {
-    switch (v.type) {
-        case VAL_OBJ: return v.p[i * 2 + 1];
-        case VAL_ARR: return v.p[i];
-        default:      return VALUE_NIL;
-    }
-}
-
-Value value_get_key(Value v, const char* key) {
-    if (v.type == VAL_OBJ)
-        for (int i = 0; i < v.len; i += 2) {
-            if (!jo_cmp(v.p[i].s, key, v.p[i].len))
-                return v.p[i + 1];
-        }
-    return VALUE_NIL;
-}
+int slice_cmp(Value a, Value b, int start, int len);
+int value_cmp(Value a, Value b);
+Value value_obj(void);
+Value value_id(const char* s);
+Value value_str(const char* s, int len);
+Value value_float(double d);
+Value value_int(long i);
+Value value_index(Value v, int index);
+Value value_key(Value v, const char* key);
 
 #ifdef JO_USE_IMPL
 
@@ -555,7 +480,7 @@ static inline Token* next(Token* tok) {
     return skip_empty(tok);
 }
 
-Token* parse_expo(Token* start, Value* out) {
+Token* parse_exponent(Token* start, Value* out) {
     Token* t = start;
     if (t->type != TOK_EXPONENT)
         return start;
@@ -588,7 +513,7 @@ Token* parse_dec(Token* start, Value* out) {
     out->type = VAL_FLOAT;
 
     if (t->type == TOK_EXPONENT)
-        t = parse_expo(t, out);
+        t = parse_exponent(t, out);
 
     return t;
 }
@@ -625,7 +550,7 @@ Token* parse_num(Token* start, Value* out) {
     } else if (t->type == TOK_EXPONENT) {
         unsigned long l = out->i;
         out->f = l;
-        Token* n = parse_expo(t, out);
+        Token* n = parse_exponent(t, out);
         if (n == t) //check success
             out->i = l;
         else
@@ -789,7 +714,7 @@ Token* parse_any(Token* tok, Value* out) {
         case '+':
         case '-':          return parse_num(tok, out);
         case TOK_DOT:      return parse_dec(tok, out);
-        case TOK_EXPONENT: return parse_expo(tok, out);
+        case TOK_EXPONENT: return parse_exponent(tok, out);
         case TOK_ID:       return parse_id(tok, out);
         case TOK_STRING:   return parse_str(tok, out);
         case TOK_GROUP:    return parse_group(tok, out);
@@ -811,7 +736,7 @@ const char* tokentype_name(enum TokenType type) {
         case TOK_TERM:          return "TERM";
         case TOK_DOT:           return "DOT";
         case TOK_NEWLINE:       return "NL";
-        case TOK_EXPONENT:      return "EXPO";
+        case TOK_EXPONENT:      return "EXPONENT";
         case '-':
         case '+':               return "UNARY";
         default:                return "OTHER";
@@ -848,6 +773,100 @@ void token_print(const Token* t) {
 #undef COL_RESET
 #undef COL_GREEN
 #undef COL_PURPLE
+}
+
+int slice_cmp(Value a, Value b, int start, int len) {
+    int stepA = a.type - VAL_ARR + 1;
+    int stepB = b.type - VAL_ARR + 1;
+
+    if (a.len < start + len || b.len < start + len)
+        return -1;
+
+    int end = start + len;
+
+    while (start != end) {
+        if (value_cmp(a.p[start * stepA], b.p[start * stepB]))
+            return 1;
+
+        start++;
+    }
+
+    return 0;
+}
+
+int value_cmp(Value a, Value b) {
+    switch (a.type) {
+        case VAL_NONE:
+            switch (b.type) {
+                case VAL_NONE: return 0;
+                default:       return 1;
+            }
+
+        case VAL_BOOL:
+        case VAL_INT:
+            switch (b.type) {
+                case VAL_BOOL:
+                case VAL_INT:   return a.i != b.i;
+                case VAL_FLOAT: return a.i != b.f;
+                default:        return 1;
+            }
+        case VAL_FLOAT:
+            switch (b.type) {
+                case VAL_BOOL:
+                case VAL_INT:   return a.f != b.i;
+                case VAL_FLOAT: return a.f != b.f;
+                default:        return 1;
+            }
+        case VAL_ARR:
+        case VAL_OBJ:
+            switch (b.type) {
+                case VAL_ARR:
+                case VAL_OBJ:
+                    return a.len != b.len || slice_cmp(a, b, 0, a.len);
+                default: return 1;
+            }
+        case VAL_STR:
+        case VAL_ID:
+            switch (b.type) {
+                case VAL_STR:
+                case VAL_ID:
+                    return a.len == b.len && jo_cmp(a.s, b.s, a.len) != 0;
+                default: return 1;
+            }
+
+        default:
+            return a.type == b.type && a.i == b.i;
+    }
+}
+Value value_obj() {
+    return (Value){.type = VAL_OBJ};
+}
+Value value_id(const char* s) {
+    int len = 0;
+    while (s[len]) len++;
+    return (Value){.type = VAL_ID, .s = str_alloc(s, len), .len = len};
+}
+Value value_str(const char* s, int len) {
+    if (!len)
+        while (s[len]) len++;
+    return (Value){.type = VAL_STR, .s = str_alloc(s, len), .len = len};
+}
+Value value_float(double d) { return (Value){.type = VAL_FLOAT, .f = d}; }
+Value value_int(long i) { return (Value){.type = VAL_INT, .i = i}; }
+Value value_index(Value v, int i) {
+    switch (v.type) {
+        case VAL_OBJ: return v.p[i * 2 + 1];
+        case VAL_ARR: return v.p[i];
+        default:      return VALUE_NIL;
+    }
+}
+Value value_key(Value v, const char* key) {
+    if (v.type == VAL_OBJ)
+        for (int i = 0; i < v.len; i += 2) {
+            if (!jo_cmp(v.p[i].s, key, v.p[i].len))
+                return v.p[i + 1];
+        }
+    return VALUE_NIL;
 }
 
 #endif

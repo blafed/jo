@@ -23,7 +23,7 @@ Value jo(const char* src);
 
 void test_api() {
     Value obj = jo("{x 'hi there', y 1}");
-    Value val = value_get_key(obj, "y");
+    Value val = value_key(obj, "y");
     Value another = value_obj();
 
     int cmp = value_cmp(val, VALUE_TRUE);
@@ -33,12 +33,11 @@ void test_api() {
     char ser[256];
     int size = serialize(obj, ser);
     fwrite(ser, 1, size, stdout);
-    printf("%i \n", val.type);
 }
 
 int main() {
-    // test_api();
-    // return 0;
+    test_api();
+    return 0;
     char* src;
     size_t fsize = file("ex/0.2.jo", &src);
 
