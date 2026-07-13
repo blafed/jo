@@ -474,9 +474,19 @@ int serialize_cr(Value v, char* out) {
             out += out_string(out, "}");
             out += out_string(out, "}");
             break;
+        case VAL_BOOL:
+            if (v.i)
+                out += out_string(out, "VALUE_TRUE");
+            else
+                out += out_string(out, "VALUE_FALSE");
+            break;
+        case VAL_NONE:
+            out += out_string(out, "VALUE_NIL");
+            break;
     }
     return out - start;
 }
+
 static inline int digit_val(char c) {
     if (c >= '0' && c <= '9') return c - '0';
     if (c >= 'a' && c <= 'f') return 10 + (c - 'a');

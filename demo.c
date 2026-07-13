@@ -22,7 +22,7 @@ size_t file(const char* path, char** out) {
 Value jo(const char* src);
 
 void test_api() {
-    Value obj = jo("{x 1,y 2,z 3}");
+    Value obj = jo("{x 1,y 2,z nil}");
     Value val = value_key(obj, "y");
     Value another = value_obj();
 
