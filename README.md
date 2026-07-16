@@ -32,3 +32,14 @@ inventory {
 comment block
 */
 ```
+
+# 0.2 syntax
+```jo
+
+//v0.2 true, false, nil, e-notation
+dark true
+light false
+stuff nil
+num1 1.5e99
+num2 1e-12
+```
