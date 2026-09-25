@@ -38,6 +38,7 @@ enum TokenType : unsigned char {
     TOK_SLASH_SLASH = 128,
     TOK_SLASH_STAR,
     TOK_STAR_SLASH,
+    TOK_PLUS_PLUS,
 
     //keywords
     TOK_NIL = 192,
@@ -51,12 +52,14 @@ enum ValueType {
     VAL_INT,
     VAL_BOOL,
     VAL_FLOAT,
+    VAL_OP,
 
     VAL_STR,
     VAL_ID,
 
     VAL_ARR,
     VAL_OBJ,
+    VAL_STAT,
 };
 
 struct Value {
@@ -99,6 +102,8 @@ int value_cmp(Value a, Value b);
 int slice_cmp(Value a, Value b, int start, int len);
 int value_cmp(Value a, Value b);
 Value value_obj(void);
+Value value_binary(Value a, Value b, char op);
+Value value_stat_add(Value stat, Value operand, char op);
 Value value_id(const char* s);
 Value value_str(const char* s, int len);
 Value value_float(double d);
@@ -127,6 +132,10 @@ unsigned char token_type(const char* s) {
                 case '/': return TOK_STAR_SLASH;
             }
             break;
+        case '+':
+            switch (s[1]) {
+                case '+': return TOK_PLUS_PLUS;
+            }
     }
 
     return c;
@@ -293,6 +302,8 @@ Token* organize(Token* list, Token* stack[]) {
                     case TOK_EMPTY: remove break;
                     case TOK_NUM:
                     case TOK_ID: push(type); break;
+                    case '/':
+                    case '*':
                     case '+': 
                     case '-': break;
                     case '_':  become(TOK_ID) break;
@@ -409,6 +420,24 @@ int serialize(Value v, char* out) {
             break;
         case VAL_NONE: out += keyword_str(TOK_NIL, out); break;
         case VAL_BOOL: out += keyword_str(v.i + TOK_FALSE, out); break;
+        case VAL_STAT:
+            *out = '(';
+            out++;
+            const Value* lhs = &v.p[0];
+            out += serialize(*lhs, out);
+            for (int i = 1; i < v.len; i += 2) {
+                const Value* op = &v.p[i];
+                const Value* rhs = &v.p[i + 1];
+                out += serialize(*op, out);
+                out += serialize(*rhs, out);
+            }
+            *out = ')';
+            out++;
+            break;
+        case VAL_OP:
+            *out = (char)v.i;
+            out++;
+            break;
     }
     return out - start;
 }
@@ -554,6 +583,194 @@ static inline Token* next(Token* tok) {
     return skip_empty(tok);
 }
 
+static inline int is_op(Token tok) {
+    return tok.type == '+' || tok.type == '-' || tok.type == '*' || tok.type == '/' || tok.type == '%';
+}
+
+Token* parse_any(Token* tok, Value* out);
+
+unsigned char op_precedence(char op) {
+    switch (op) {
+        case '*':
+        case '/':
+        case '%': return -3;
+        case '+':
+        case '-': return -4;
+        case '&': return -8;
+        case '^': return -9;
+        case '|': return -10;
+    }
+    return 0;
+}
+
+// Value stat_precedence(Value stat) {
+//     char stack[256];
+//     int sp = 0;
+//     stack[sp] = 0;
+//     for (int i = 1; i < stat.len; i += 2) {
+//         stack[++sp] = stat.p[i].i;
+
+//         // a + b * c
+//         if (sp >= 2 && op_precedence(stack[sp]) > op_precedence(stack[sp - 1])) {
+//             Value tmp = stat.p[i - 2];
+//             stat.p[i - 2] = stat.p[i];
+//             stat.p[i] = tmp;
+
+//             //lhs
+//             tmp = stat.p[i - 3];
+//             stat.p[i - 3] = stat.p[i - 1];
+//             stat.p[i - 1] = tmp;
+
+//             //rhs
+//             tmp = stat.p[i - 1];
+//             stat.p[i - 1] = stat.p[i + 1];
+//             stat.p[i + 1] = tmp;
+
+//             sp -= 2;
+//         }
+//     }
+
+//     return stat;
+// }
+
+Value stat_reduce(Value v) {
+    if (v.type != VAL_STAT)
+        return v;
+
+    if (v.p[2].type == VAL_STAT) {
+        if (op_precedence(v.p[0].i) < op_precedence(v.p[2].p[0].i)) {
+            Value tmp = v.p[0];
+            v.p[0] = v.p[2].p[0];
+            v.p[2].p[0] = tmp;
+        }
+    }
+
+    return v;
+}
+// Token* parse_continue_stat(Token* start, Value* cur) {
+//     Token* t = start;
+
+//     if (is_op(*t)) {
+//         char type = t->type;
+//         t = next(t);
+//         Value rhs;
+//         Token* n = parse_any(t, &rhs);
+//         if (n != t) { //check success
+//             if (cur->type != VAL_STAT)
+//                 *cur = value_binary(*cur, rhs, type);
+//             else {
+//                 cur->p = value_exp(cur->p, cur->len + 2);
+//                 cur[cur->len] = (Value){.type = VAL_OP, .i = type};
+//                 cur[cur->len] = rhs;
+//                 cur->len += 2;
+//             }
+//         }
+//         t = n;
+//     }
+
+//     if (t == start) {
+//         if (cur->type == VAL_STAT)
+//             stat_reduce(*cur);
+//         return t;
+//     }
+
+//     return parse_continue_stat(t, cur);
+// }
+Token* parse_num(Token* start, Value* out);
+Token* parse_continue_stat(Token* t, Value* out, Value lhs) {
+    Value stat = (Value){.type = VAL_STAT, .len = 1, .p = value_exp(NULL, 1)};
+    stat.p[0] = lhs;
+    while (is_op(*t)) {
+        char op = t->type;
+        t = next(t);
+
+        Value rhs;
+        Token* n = parse_num(t, &rhs);
+        if (n == t)
+            break;
+
+        stat.p = value_exp(stat.p, stat.len + 2);
+        stat.p[stat.len++] = (Value){.type = VAL_OP, .i = op};
+        stat.p[stat.len++] = rhs;
+
+        t = n;
+    }
+
+    *out = stat;
+    return t;
+}
+
+void stat_reorder(Value* stat) {
+    for (int i = 3; i < stat->len; i += 2) {
+        while (i >= 3 && op_precedence(stat->p[i].i) > op_precedence(stat->p[i - 2].i)) {
+            Value lhs = stat->p[i - 3];
+            Value op1 = stat->p[i - 2];
+            Value mid = stat->p[i - 1];
+            Value op2 = stat->p[i];
+            Value rhs = stat->p[i + 1];
+            stat->p[i - 3] = mid;
+            stat->p[i - 2] = op2;
+            stat->p[i - 1] = rhs;
+            stat->p[i] = op1;
+            stat->p[i + 1] = lhs;
+            i -= 2;
+        }
+    }
+}
+
+static double float_val(Value v) { return v.type == VAL_FLOAT ? v.f : v.i; }
+Value stat_eval(Value stat) {
+    double total = float_val(stat.p[0]);
+    for (int i = 1; i < stat.len - 1; i += 2) {
+        switch (stat.p[i].i) {
+            case '+': total += float_val(stat.p[i + 1]); break;
+            case '-': total -= float_val(stat.p[i + 1]); break;
+            case '*': total *= float_val(stat.p[i + 1]); break;
+            case '/': total /= float_val(stat.p[i + 1]); break;
+        }
+    }
+    return value_float(total);
+}
+
+Value value_eval(Value value) {
+    switch (value.type) {
+        case VAL_STAT: return stat_eval(value);
+        default:       return value;
+    }
+}
+
+Token* parse_stat(Token* start, Value* out, Value lhs) {
+    Token* t = start;
+    if (!is_op(*t)) {
+        *out = lhs;
+        return t;
+    }
+    t = parse_continue_stat(t, out, lhs);
+    if (out->type == VAL_STAT)
+        stat_reorder(out);
+    return t;
+}
+
+Token* parse_continue_binary(Token* start, Value* out, Value lhs) {
+    Token* t = start;
+    if (is_op(*t)) {
+        char type = t->type;
+        t = next(t);
+        Value rhs;
+        Token* n = parse_any(t, &rhs);
+        if (n != t) //check success
+            *out = value_binary(lhs, rhs, type);
+        t = n;
+    }
+
+    if (t == start) {
+        // *out = stat_reduce(*out);
+        return t;
+    }
+
+    return parse_continue_binary(t, out, *out);
+}
+
 Token* parse_exponent(Token* start, Value* out) {
     Token* t = start;
     if (t->type != TOK_EXPONENT)
@@ -634,6 +851,7 @@ Token* parse_num(Token* start, Value* out) {
         out->i *= sign;
     else if (out->type == VAL_FLOAT)
         out->f *= sign;
+    // return parse_start_stat(t, out, *out);
     return t;
 }
 
@@ -664,14 +882,13 @@ Token* parse_str(Token* start, Value* out) {
     return t;
 }
 
-Token* parse_any(Token* tok, Value* out);
-
 Token* parse_kv(Token* start, Value* k, Value* v) {
     Token* t = start;
     if (t->type == TOK_ID) {
         t = parse_id(t, k);
         t = skip_empty(t);
         t = parse_any(t, v);
+        t = parse_stat(t, v, *v);
     } else {
         k->type = 0;
         v->type = 0;
@@ -695,6 +912,7 @@ Token* parse_arr(Token* start, Value* out) {
             break;
         else
             t = n;
+        t = parse_stat(t, &el, el);
 
         if (cap == out->len) {
             cap = cap * 2 + 2;
@@ -911,6 +1129,22 @@ int value_cmp(Value a, Value b) {
         default:
             return a.type == b.type && a.i == b.i;
     }
+}
+
+Value value_binary(Value a, Value b, char op) {
+    Value* ptr = value_exp(NULL, 3);
+    ptr[0] = (Value){.type = VAL_OP, .i = op};
+    ptr[1] = a;
+    ptr[2] = b;
+
+    return (Value){.type = VAL_STAT, .len = 3, .p = ptr};
+}
+Value value_stat_add(Value stat, Value operand, char op) {
+    stat.p = value_exp(stat.p, stat.len + 2);
+    stat.p[stat.len] = operand;
+    stat.p[stat.len + 1] = (Value){.type = VAL_OP, .i = op};
+    stat.len += 2;
+    return stat;
 }
 Value value_obj() {
     return (Value){.type = VAL_OBJ};
