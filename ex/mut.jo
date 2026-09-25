@@ -1,0 +1,9 @@
+muttype enum {create_building, destroy_building}
+mut struct {
+    type muttype
+
+    union type{
+        .create_building {buildingType int, id int, x int, y int}
+        .destroy_building {id int}
+    }
+}

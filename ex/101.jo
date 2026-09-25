@@ -1,0 +1,78 @@
+"hello world" //this prints
+
+
+[] () //postfix or prefix
+{} //group with header
+
+() {} //group has header
+if x {} //if x is a header which contains header(if) and group (x), and that header is header of {}
+
+a:b
+
+
+
+Data struct {
+    
+}
+
+Point struct {
+    x int
+    y int
+}
+
+x Point, y Point, z Point
+
+x = Point {1,2}
+y = Point{0,2}
+z =  x + y
+
+
+
+x 0
+y 0
+x 1 + 2
+
+
+
+
+Player struct {
+    jovy.Component
+
+    attack int
+    defense int
+}
+
+
+Player. {
+    default Player {
+        attack 10
+        defense 20
+    }
+
+    start() {
+        
+    }
+
+    update() {
+
+    }
+}
+
+
+
+
+//main.scene
+Scene {
+    objects {
+        {name 'player', transform {pos {0,0,0}}, components {Player{attack 15, defense 20}}}
+        {name 'enemy1', transform{pos{1,2,2}} components {Enemy{attack 15, aggressive 20}}}
+        {name 'enemy2', components {Enemy{attack 15, aggressive 20}}}
+    }
+}
+
+
+main() {
+    jovy.run()
+    s jovy.res('main.scene')
+    jovy.run_scene(s)
+}

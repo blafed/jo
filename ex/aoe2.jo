@@ -1,0 +1,18 @@
+//things not mentioned inside this enum, means its a builtin by the DSL
+enum {
+    dock_size
+    eagle
+}
+
+rivery() sn(dock_size, islands) | map(baltic) & map(rivers)
+
+
+rush_eagle() {
+    set_sn(dock_size, mixed)
+    strat(rush)
+    goal(eagle)
+}
+
+if rivery & goal(eagle) {
+    rush_eagle()
+}

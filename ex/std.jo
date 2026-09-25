@@ -1,0 +1,20 @@
+List[T] struct {
+    arr voidptr[T]
+    len int
+    cap int
+}
+
+List[T]. {
+    add(me, x T) {
+        if me.len == me.cap {
+            me.grow()
+        }
+        me.arr[me.len] = x
+        me.len++
+    }
+
+    grow(me, cap 1 + me.cap * 2) {
+        me.cap = cap
+        me.arr = mov [me.cap]me.arr
+    }
+}

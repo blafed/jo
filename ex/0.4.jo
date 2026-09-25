@@ -1,0 +1,10 @@
+//v0.4
+//names
+
+x 0
+y x + 2
+foo {0,1,2,3}
+bar {x,y,foo} //deep copy
+jax bar[2] //access
+jux bar.1 //sugar for bar[1]
+jex bar['foo'] //sugar for bar.foo

@@ -1,3 +1,5 @@
+//v0.1 data language
+
 age 10
 pi 3.14
 msg 'hi there'

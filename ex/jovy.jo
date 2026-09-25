@@ -1,0 +1,42 @@
+Jovy struct {
+
+}
+
+Scene struct {
+    objects []Object
+}
+
+Object struct {
+    enabled bool
+    comps []Comp
+    children []ref Object
+    parent ?ref Object
+}
+
+Object. {
+    set_parent(me, obj Object) {
+        if parent == obj return
+        if me.parent != null: me.parent.children = me.parent.children.make_remove(me)
+        obj.children ++= me
+        me.parent = obj
+    }
+}
+
+Comp struct{
+    enabled bool
+}
+
+Transform struct {
+    Comp
+    pos Vec3
+    rot Quat
+    scale Vec3
+}
+
+
+CompEvents trait {
+    start(scene Scene, obj Object) void
+    update(scene Scene, obj Object, dt float) void
+    fixed_update(scene Scene, obj Object, dt float) void
+    late_update(scene Scene, obj Object, dt float) void
+}

@@ -1,0 +1,51 @@
+Transform struct {
+    localPosition Vector3
+    localScale Vector3
+    localRotation Quataternion
+}
+
+Transform. {
+    position(me) Vector3
+    scale(me) Vector3
+    rotation(me) Quat
+    set_position(me, Vector3 globalpos)
+}
+
+Component trait {
+    transform(me) ref Transform
+    
+    start(me)
+    update(me, dt float)
+}
+
+FlyDriver struct {
+
+}
+
+FlyDriver. Component. {
+
+    start(me) {
+        transform.position = Vector3.up * 100
+    }
+
+    update(me, dt float){
+
+    }
+}
+
+
+//res/main
+res_main Scene {
+//HERE IS THE FULL SHIT OF YOUR SCENE
+}
+
+
+//res/player
+res_player GameObject {
+//HERE IS THE FULL SHIT OF YOUR PREFAB LITERALLY
+    components dyn []{
+        Transform{set_position({0,11,0})}
+        FlyDriver{speed 10}
+    }
+    parent null
+}

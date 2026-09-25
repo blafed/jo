@@ -1,0 +1,22 @@
+//0.7 iteration
+
+
+for i 0 to 10 "hello $i"
+
+list {'apple', 'orange', 'banana'}
+
+for list {
+    it.value
+    it.index
+    it.first
+    it.last
+    it.prev
+    it.next
+    it.len
+}
+
+
+for list start to count {
+    it.value
+    it.index
+}

@@ -1,0 +1,19 @@
+stuff # 64
+
+stuffs #(i){
+    vector$i
+}
+
+stuffs(2) {
+    x stuff
+    y stuff##0
+}
+
+stuffs(3) {
+    x stuff
+    y stuff + 3
+    z stuff + 9
+}
+
+//keywords
+if else for on do 

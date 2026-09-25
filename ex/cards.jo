@@ -1,0 +1,57 @@
+CardName enum {
+    knight
+    musketeer
+    giant
+    archers
+    minions
+    wizard
+    hogrider
+    pekka
+    fireball
+    zap
+    rocket
+    arrows
+    cannon
+    tesla
+    mortar
+    xbow
+}
+
+CardType enum {troop, spell, building}
+
+Card struct {
+    name CardName
+    type CardType
+    level int
+}
+
+PlayerData struct {
+    cards []Card
+    deck []int
+}
+
+data {
+    deck int[]
+}
+
+data {
+    deck {0,1,2,3,4,5,6,7}
+    cards []Card{
+        {.knight, .troop}
+        {.musketeer, .troop}
+        {.giant, .troop}
+        {.archers, .troop}
+        {.minions, .troop}
+        {.wizard, .troop}
+        {.hogrider, .troop}
+        {.pekka, .troop}
+        {.fireball, .spell}
+        {.zap, .spell}
+        {.rocket, .spell}
+        {.arrows, .spell}
+        {.cannon, .building}
+        {.tesla, .building}
+        {.mortar, .building}
+        {.xbow, .building}
+    }
+}

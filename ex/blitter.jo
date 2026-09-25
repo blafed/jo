@@ -1,0 +1,272 @@
+GLuint void
+GL_ARRAY_BUFFER void
+GL_TRIANGLE_STRIP void
+GL_FALSE void
+GL_FLOAT void
+GL_STATIC_DRAW void
+glGetUniformLocation void
+glUniform4f void
+glUniform1f void
+
+shader_create void
+
+glGenVertexArrays void
+glGenBuffers void
+glBindVertexArray void
+glBindBuffer void
+glBufferData void
+glVertexAttribPointer void
+glEnableVertexAttribArray void
+glDrawArrays void
+
+glEnable void
+GL_BLEND void
+GL_SCISSOR_TEST void
+
+glBlendFunc void
+GL_SRC_ALPHA void
+GL_ONE_MINUS_SRC_ALPHA void
+
+glUseProgram void
+glViewport void
+
+glDisable void
+
+glScissor void
+
+glBindFramebuffer void
+GL_FRAMEBUFFER void
+
+glClearColor void
+glClear void
+GL_COLOR_BUFFER_BIT void
+
+glDeleteVertexArrays void
+glDeleteBuffers void
+glDeleteProgram void
+
+glTexParameteri void
+GL_TEXTURE_2D void
+GL_TEXTURE_WRAP_S void
+GL_TEXTURE_WRAP_T void
+GL_CLAMP_TO_EDGE void
+
+glActiveTexture void
+GL_TEXTURE0 void
+
+glBindTexture void
+
+glUniform1i void
+
+Blitter struct {
+    shader Gluint, vao Gluint, vbo Gluint
+    loc_rect Gluint, loc_screen_size Gluint, loc_tex Gluint, loc_opacity Gluint, loc_text_rect Gluint
+    textuer Gluint
+    texW float, texH float
+    screenW int, screenH int
+    clear_color [4]float
+}
+
+blitter. {
+    me Blitter
+    
+    create() {
+        b new me
+
+        b.shader = shader_create(shader.vert, shader.frag, shader.vert_es, shader.frag_es)
+
+        b.loc_rect = glGetUniformLocation(b.shader, "rect")
+        b.loc_tex = glGetUniformLocation(b.shader, "tex")
+        b.loc_opacity = glGetUniformLocation(b.shader, "opacity")
+
+        quad {
+            0, 1, 0.0, 1.0,
+            1, 1, 1.0, 1.0,
+            0, 0, 0.0, 0.0,
+            1, 0, 1.0, 0.0
+        }
+
+        glGenVertexArrays(1, &b.vao)
+        glGenBuffers(1, &b.vbo)
+
+        glBindVertexArray(b.vao)
+
+        glBindBuffer(GL_ARRAY_BUFFER, b.vbo)
+        glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_STATIC_DRAW)
+
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), 0)
+        glEnableVertexAttribArray(0)
+
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), 2 * sizeof(float))
+        glEnableVertexAttribArray(1)
+
+        glBindVertexArray(0)
+
+        return b
+    }
+
+    draw(me) {
+        glBindVertexArray(me.vao)
+	    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4)
+	    glBindVertexArray(0)
+    }
+    begin(me) {
+	    glEnable(GL_BLEND)
+	    glEnable(GL_SCISSOR_TEST)
+	    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+	    glUseProgram(me.shader)
+	    glViewport(0, 0, me.screenW, me.screenH)
+    }
+    end(me) {
+        glDisable(GL_BLEND)
+        glDisable(GL_SCISSOR_TEST)
+    }
+    clear(me) {
+        glScissor(x, y, w, h)
+	    glBindFramebuffer(GL_FRAMEBUFFER, 0)
+	    glClearColor(me.clearColor[0], me.clearColor[1], me.clearColor[2], me.clearColor[3])
+	    glClear(GL_COLOR_BUFFER_BIT)
+    }
+
+    destroy(me) {
+        glDeleteVertexArrays(1, &me.vao)
+        glDeleteBuffers(1, &me.vbo)
+        glDeleteProgram(me.shader)
+    }
+
+    config(me, screenW int, screenH int) {
+        me.screenW = screenW
+        me.screenH = screenH
+    }
+
+    with(me, texture uint, width float, height float) {
+        me.texture = texture
+        me.texW = width
+        me.texH = height
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+    }
+
+    props(me, x float, y float, w float, h float, dx float, dy float, opacity float) {
+        glUniform4f(me.loc_rect, dx / me.screenW, dy / me.screenH, me.texW / me.screenW, me.texH / me.screenH)
+        glUniform1f(me.loc_opacity, opacity)
+
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, me.texture)
+
+        glUniform1i(me.loc_tex, 0)
+
+        glScissor(int(dx + x), int(dy + y), int(w), int(h))
+    }
+
+    begin(me) {
+        glEnable(GL_BLEND)
+        glEnable(GL_SCISSOR_TEST)
+
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+
+        glUseProgram(me.shader)
+
+        glViewport(0, 0, me.screenW, me.screenH)
+    }
+
+    end(me) {
+        glDisable(GL_BLEND)
+        glDisable(GL_SCISSOR_TEST)
+    }
+
+    clear(me, x int, y int, w int, h int) {
+        glScissor(x, y, w, h)
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0)
+
+        glClearColor(me.clearColor[0], me.clearColor[1], me.clearColor[2], me.clearColor[3])
+
+        glClear(GL_COLOR_BUFFER_BIT)
+    }
+
+    draw(me) {
+        glBindVertexArray(me.vao)
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4)
+        glBindVertexArray(0)
+    }
+
+    draw4(me, x float, y float, w float, h float, opacity float) {
+        me.props(x, y, w, h, x, y, opacity)
+        me.draw()
+    }
+
+
+
+    shader. {
+#ifndef GLES
+        vert = '
+        #version 330 core
+
+        layout (location = 0) in vec2 inPos
+        layout (location = 1) in vec2 inTex
+
+        out vec2 TexCoords
+
+        uniform vec4 rect
+
+        void main() {
+            vec2 pos = rect.xy + inPos * rect.zw
+            gl_Position = vec4(pos * 2.0 - 1.0, 0.0, 1.0)
+            TexCoords = inTex
+        }
+        '
+
+        frag = '
+        #version 330 core
+
+        in vec2 TexCoords
+        out vec4 FragColor
+
+        uniform sampler2D tex
+        uniform float opacity
+
+        void main() {
+            vec4 texColor = texture(tex, TexCoords)
+            FragColor = vec4(texColor.rgb, texColor.a * opacity)
+        }
+        '
+#else
+
+        vert = '
+        #version 300 es
+        precision mediump float
+
+        layout (location = 0) in vec2 inPos
+        layout (location = 1) in vec2 inTex
+
+        out vec2 TexCoords
+
+        uniform vec4 rect
+
+        void main() {
+            vec2 pos = rect.xy + inPos * rect.zw
+            gl_Position = vec4(pos * 2.0 - 1.0, 0.0, 1.0)
+            TexCoords = inTex
+        }
+        '
+
+        frag = '
+        #version 300 es
+        precision mediump float
+
+        in vec2 TexCoords
+        out vec4 FragColor
+
+        uniform sampler2D tex
+        uniform float opacity
+
+        void main() {
+            vec4 texColor = texture(tex, TexCoords)
+            FragColor = vec4(texColor.rgb, texColor.a * opacity)
+        }
+        '
+#endif
+    }
+}   

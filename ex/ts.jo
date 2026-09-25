@@ -1,0 +1,21 @@
+#if browser
+math alias Math
+#endif
+
+math.cos(100)
+
+foo() {
+    canvas document.createElement('canvas')
+    canvas.fillStyle = '#fff'
+    canvas.fillRect(0,0,20,20)
+}
+
+somedata {
+    who 'me'
+    age 20
+    what {'request', 'stuff'}
+}
+
+console.log(somedata)
+
+foo()

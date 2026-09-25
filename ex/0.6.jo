@@ -1,0 +1,16 @@
+//v0.6 control + echo + interpolation
+
+x 0
+y if x 10 el 0
+
+if y "there is some y"
+
+grade 10
+msg on grade {
+    10 'high score'
+    9 'good'
+    8 'decent'
+    el 'fail'
+}
+
+"your grades: $msg"

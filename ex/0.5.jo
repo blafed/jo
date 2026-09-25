@@ -1,0 +1,27 @@
+//v0.5
+//c emission
+
+x 0
+y x + 1
+foo {0,1,2}
+bar {a x,b y,c 0}
+qux foo
+//
+int* bun_int_new(size_t len);
+void bun_int_cpy(int* dst, int* src, size_t len);
+
+int x = 0;
+int y = x + 1;
+int foo[] = {0,1,2};
+int foo_len = 3;
+struct {int a; int b; int c;} bar = {.a = a, .b = y, .c = 0};
+int* qux = bun_int_new(foo_len);
+bun_int_cpy(qux, foo, foo_len);
+
+int* bun_int_new(size_t len){
+    return jo_new(len * sizeof(int));
+}
+
+void bun_int_cpy(int* dst, int* src, size_t len){
+    jo_cpy(dst, src, len * sizeof(int));
+}
